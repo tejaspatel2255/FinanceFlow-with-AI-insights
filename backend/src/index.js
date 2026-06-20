@@ -253,6 +253,303 @@ Provide a concise, friendly, and analytical answer in 2-3 sentences max. Focus o
   }
 });
 
+// ----------------------------------------------------------------------------
+// PART A: SAVINGS GOALS TRACKER ENDPOINTS
+// ----------------------------------------------------------------------------
+
+// GET /api/goals - List user's goals
+app.get("/api/goals", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { data: goals, error } = await supabaseAdmin
+      .from("goals")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    res.json(goals);
+  } catch (error) {
+    console.error("Fetch Goals Error:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch goals" });
+  }
+});
+
+// POST /api/goals - Create a goal
+app.post("/api/goals", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name, target_amount, current_amount = 0, deadline } = req.body;
+
+    if (!name || !target_amount) {
+      return res.status(400).json({ error: "Goal name and target amount are required" });
+    }
+
+    const { data: goal, error } = await supabaseAdmin
+      .from("goals")
+      .insert({
+        user_id: userId,
+        name,
+        target_amount: parseFloat(target_amount),
+        current_amount: parseFloat(current_amount),
+        deadline: deadline || null
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json(goal);
+  } catch (error) {
+    console.error("Create Goal Error:", error);
+    res.status(500).json({ error: error.message || "Failed to create goal" });
+  }
+});
+
+// PUT /api/goals/:id - Update goal (e.g. add funds or edit fields)
+app.put("/api/goals/:id", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { name, target_amount, current_amount, deadline } = req.body;
+
+    const updatePayload = {};
+    if (name !== undefined) updatePayload.name = name;
+    if (target_amount !== undefined) updatePayload.target_amount = parseFloat(target_amount);
+    if (current_amount !== undefined) updatePayload.current_amount = parseFloat(current_amount);
+    if (deadline !== undefined) updatePayload.deadline = deadline || null;
+
+    const { data: goal, error } = await supabaseAdmin
+      .from("goals")
+      .update(updatePayload)
+      .eq("id", id)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json(goal);
+  } catch (error) {
+    console.error("Update Goal Error:", error);
+    res.status(500).json({ error: error.message || "Failed to update goal" });
+  }
+});
+
+// DELETE /api/goals/:id - Delete a goal
+app.delete("/api/goals/:id", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    const { data: goal, error } = await supabaseAdmin
+      .from("goals")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ message: "Goal deleted successfully", goal });
+  } catch (error) {
+    console.error("Delete Goal Error:", error);
+    res.status(500).json({ error: error.message || "Failed to delete goal" });
+  }
+});
+
+// GET /api/goals/:id/forecast - Generate AI Forecast for a specific goal
+app.get("/api/goals/:id/forecast", requireAuth, aiRateLimiter, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    // Fetch the specific goal
+    const { data: goal, error: goalError } = await supabaseAdmin
+      .from("goals")
+      .select("*")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+
+    if (goalError || !goal) {
+      return res.status(404).json({ error: "Goal not found" });
+    }
+
+    // Calculate monthly savings rate from transactions of the last 3 months
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const dateLimit = threeMonthsAgo.toISOString().split("T")[0];
+
+    const { data: transactions = [] } = await supabaseAdmin
+      .from("transactions")
+      .select("amount, type")
+      .eq("user_id", userId)
+      .gte("date", dateLimit);
+
+    let totalIncome = 0;
+    let totalExpense = 0;
+    transactions.forEach((tx) => {
+      if (tx.type === "income") totalIncome += Number(tx.amount);
+      else totalIncome -= Number(tx.amount); // Wait, expense reduces overall pool
+    });
+
+    // Actually savings is: Income - Expense
+    const netSavings = Math.max(0, totalIncome); // Keep positive
+    const monthlySavingsRate = Math.max(0, netSavings / 3);
+
+    const prompt = `
+Goal details:
+- Name: "${goal.name}"
+- Target Amount: ₹${goal.target_amount}
+- Current Amount Saved: ₹${goal.current_amount}
+- Target Deadline: ${goal.deadline || "None set"}
+
+User's Average Monthly Savings Rate: ₹${monthlySavingsRate.toFixed(2)}/month.
+
+Provide a single, short sentence (max 15 words) in Indian Rupees (₹) analyzing if they will hit the goal by the deadline at their current pace.
+Examples:
+- "At your current pace, you'll reach this goal 12 days early!"
+- "You're behind — increase monthly savings by ₹2,000 to hit this on time."
+- "With no monthly savings, it will be impossible to reach your target on time."
+
+Return ONLY the raw sentence. No quotation marks, no preamble, and no markdown blocks.
+`;
+
+    const result = await callOpenRouterWithFallback([
+      { role: "system", content: "You are a professional financial goal planner assistant." },
+      { role: "user", content: prompt }
+    ]);
+
+    res.json({ forecast: result.text.trim() });
+  } catch (error) {
+    console.error("Goal Forecast Error:", error);
+    res.status(500).json({ error: error.message || "Failed to generate goal forecast" });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// PART B: CSV BULK IMPORT ENDPOINT
+// ----------------------------------------------------------------------------
+app.post("/api/transactions/bulk-import", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { transactions = [] } = req.body;
+
+    if (!Array.isArray(transactions)) {
+      return res.status(400).json({ error: "Invalid payload: transactions must be an array" });
+    }
+
+    if (transactions.length === 0) {
+      return res.status(400).json({ error: "No transactions provided for import" });
+    }
+
+    if (transactions.length > 1000) {
+      return res.status(400).json({ error: "Bulk import limit exceeded. Max 1000 rows allowed." });
+    }
+
+    // Map properties and format
+    const rowsToInsert = transactions.map((tx) => ({
+      user_id: userId,
+      amount: parseFloat(tx.amount),
+      type: tx.type,
+      category: tx.category || "other",
+      date: tx.date,
+      description: tx.description || null,
+      tags: Array.isArray(tx.tags) ? tx.tags : []
+    }));
+
+    const { data, error } = await supabaseAdmin
+      .from("transactions")
+      .insert(rowsToInsert)
+      .select();
+
+    if (error) throw error;
+
+    res.status(201).json({
+      success: true,
+      insertedCount: data.length,
+      failedCount: rowsToInsert.length - data.length
+    });
+  } catch (error) {
+    console.error("Bulk Import Error:", error);
+    res.status(500).json({ error: error.message || "Failed to complete bulk import" });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// PART C: AI AUTO-CATEGORIZATION ENDPOINT
+// ----------------------------------------------------------------------------
+const categoryCache = new Map();
+
+app.post("/api/transactions/categorize", requireAuth, aiRateLimiter, async (req, res) => {
+  try {
+    const { description } = req.body;
+
+    if (!description || typeof description !== "string") {
+      return res.status(400).json({ error: "Transaction description is required" });
+    }
+
+    const normalizedDesc = description.trim().toLowerCase();
+
+    // Check session in-memory cache
+    if (categoryCache.has(normalizedDesc)) {
+      console.log(`[Cache Hit] Returning auto-category for description: ${normalizedDesc}`);
+      return res.json(categoryCache.get(normalizedDesc));
+    }
+
+    const categoriesList = [
+      "housing",
+      "groceries",
+      "utilities",
+      "entertainment",
+      "transportation",
+      "insurance",
+      "salary",
+      "freelance",
+      "investments",
+      "other"
+    ];
+
+    const prompt = `
+You are an expert financial transaction classification assistant.
+Categorize this transaction description: "${description}"
+
+Select exactly one category from this fixed list:
+${categoriesList.map((c) => `- ${c}`).join("\n")}
+
+Your response must be a single raw JSON object with no markdown block formatting, no preamble, and no extra text.
+JSON structure:
+{
+  "category": "one_of_the_above_categories",
+  "confidence": 0.0 to 1.0
+}
+`;
+
+    const result = await callOpenRouterWithFallback([
+      { role: "system", content: "You are a financial classification agent." },
+      { role: "user", content: prompt }
+    ]);
+
+    let rawText = result.text.trim();
+    if (rawText.startsWith("```")) {
+      rawText = rawText.replace(/^```(json)?/, "").replace(/```$/, "").trim();
+    }
+
+    const parsedData = JSON.parse(rawText);
+    const categoryResult = {
+      category: categoriesList.includes(parsedData.category) ? parsedData.category : "other",
+      confidence: typeof parsedData.confidence === "number" ? parsedData.confidence : 0.5
+    };
+
+    // Store in cache
+    categoryCache.set(normalizedDesc, categoryResult);
+
+    res.json(categoryResult);
+  } catch (error) {
+    console.error("Auto Categorization Error:", error);
+    res.status(500).json({ error: error.message || "Failed to auto-categorize transaction" });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
