@@ -110,13 +110,13 @@ app.post("/api/insights", requireAuth, aiRateLimiter, async (req, res) => {
 
     console.log(`[Cache Miss/Expired] Querying OpenRouter for user: ${userId}`);
 
-    // 3. Build a structured prompt
+    // 3. Build a structured prompt in INR currency
     const txSummary = transactions.slice(0, 30).map(t => 
-      `- ${t.date}: ${t.type} of $${t.amount} in '${t.category}' (${t.description || "N/A"})`
+      `- ${t.date}: ${t.type} of ₹${t.amount} in '${t.category}' (${t.description || "N/A"})`
     ).join("\n");
 
     const budgetSummary = budgets.map(b => 
-      `- '${b.category}': Limit $${b.amount}/${b.period}`
+      `- '${b.category}': Limit ₹${b.amount}/${b.period}`
     ).join("\n");
 
     const prompt = `
@@ -132,27 +132,31 @@ ACTIVE BUDGETS:
 ${budgetSummary || "None set"}
 ---
 
+IMPORTANT CURRENCY INSTRUCTION:
+You MUST state all currency values in Indian Rupees (₹) and use Indian numbering formatting (lakhs/crores) where appropriate. 
+NEVER use the dollar sign ($) or USD in your response under any circumstances. Replace all dollars with Indian Rupees (₹).
+
 Analyze this and output a JSON object. You MUST respond with ONLY a valid raw JSON object. 
 Do not wrap it in markdown code blocks like \`\`\`json. Do not include preambles.
 
 The JSON object must have exactly these keys:
-- "pattern": 1 sentence summarizing their top spending trend.
-- "alert": 1 sentence highlighting a budget overrun, high spending category, or caution.
-- "forecast": 1 sentence describing their year-end savings trajectory based on these numbers.
-- "anomaly": 1 sentence identifying any suspicious, anomalous, or unusual transaction size or recurring cost (or a positive savings indicator if none found).
+- "pattern": 1 sentence summarizing their top spending trend in ₹.
+- "alert": 1 sentence highlighting a budget overrun, high spending category, or caution in ₹.
+- "forecast": 1 sentence describing their year-end savings trajectory in ₹ based on these numbers.
+- "anomaly": 1 sentence identifying any suspicious, anomalous, or unusual transaction size or recurring cost in ₹ (or a positive savings indicator if none found).
 
 JSON Format:
 {
-  "pattern": "your sentence here",
-  "alert": "your sentence here",
-  "forecast": "your sentence here",
-  "anomaly": "your sentence here"
+  "pattern": "your sentence here in ₹",
+  "alert": "your sentence here in ₹",
+  "forecast": "your sentence here in ₹",
+  "anomaly": "your sentence here in ₹"
 }
 `;
 
     // 4. Call OpenRouter with fallback chain
     const result = await callOpenRouterWithFallback([
-      { role: "system", content: "You are a specialized JSON finance agent." },
+      { role: "system", content: "You are a specialized JSON finance agent who only communicates using Indian Rupee (₹)." },
       { role: "user", content: prompt }
     ]);
 
@@ -215,7 +219,7 @@ app.post("/api/chat", requireAuth, aiRateLimiter, async (req, res) => {
 
     // Context summary
     const txSummary = transactions.slice(0, 30).map(t => 
-      `- ${t.date}: ${t.type} of $${t.amount} in '${t.category}' (${t.description || "N/A"})`
+      `- ${t.date}: ${t.type} of ₹${t.amount} in '${t.category}' (${t.description || "N/A"})`
     ).join("\n");
 
     const prompt = `
@@ -227,11 +231,15 @@ User's Question: "${question}"
 User's Recent Transactions Context:
 ${txSummary || "No transaction logs available."}
 
+IMPORTANT CURRENCY INSTRUCTION:
+You MUST state all currency values in Indian Rupees (₹) and use Indian numbering formatting (lakhs/crores) where appropriate. 
+NEVER use the dollar sign ($) or USD in your response under any circumstances. Replace all dollars with Indian Rupees (₹).
+
 Provide a concise, friendly, and analytical answer in 2-3 sentences max. Focus on exact figures, categories, and dates if they are in the context.
 `;
 
     const result = await callOpenRouterWithFallback([
-      { role: "system", content: "You are a professional personal finance advisor." },
+      { role: "system", content: "You are a professional personal finance advisor who always uses Indian Rupee (₹)." },
       { role: "user", content: prompt }
     ]);
 
