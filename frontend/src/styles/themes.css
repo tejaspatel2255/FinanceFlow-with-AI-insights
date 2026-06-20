@@ -1,0 +1,287 @@
+/* FinanceFlow Theme System Stylesheet */
+
+/* --- Original Theme (Default) --- */
+[data-theme="original"]:not(.dark) {
+  --background: 222.2 84% 98%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 221.2 83.2% 53.3%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 221.2 83.2% 53.3%;
+  --accent-foreground: 210 40% 98%;
+  --success: 142.1 76.2% 36.3%;
+  --warning: 37.9 90.2% 50.2%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 221.2 83.2% 53.3%;
+  --radius: 0.5rem;
+  --font-display: 'Inter', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+[data-theme="original"].dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --card: 222.2 84% 5.9%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 217.2 91.2% 59.8%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --success: 142.1 70% 45%;
+  --warning: 37.9 80% 45%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 224.3 76.3% 48%;
+  --radius: 0.5rem;
+  --font-display: 'Inter', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+/* --- Midnight Ledger Theme --- */
+[data-theme="midnight-ledger"]:not(.dark) {
+  --background: 215 30% 95%;
+  --foreground: 217 60% 12%;
+  --card: 40 20% 99%;
+  --card-foreground: 217 60% 12%;
+  --popover: 40 20% 99%;
+  --popover-foreground: 217 60% 12%;
+  --primary: 36 70% 40%;
+  --primary-foreground: 40 20% 99%;
+  --secondary: 215 25% 88%;
+  --secondary-foreground: 217 60% 12%;
+  --muted: 215 20% 90%;
+  --muted-foreground: 215 15% 45%;
+  --accent: 36 70% 40%;
+  --accent-foreground: 40 20% 99%;
+  --success: 150 60% 35%;
+  --warning: 40 60% 45%;
+  --destructive: 10 80% 45%;
+  --destructive-foreground: 40 20% 99%;
+  --border: 215 25% 82%;
+  --input: 215 25% 82%;
+  --ring: 36 70% 40%;
+  --radius: 0.25rem;
+  --font-display: 'Playfair Display', serif;
+  --font-body: 'Lora', serif;
+}
+[data-theme="midnight-ledger"].dark {
+  --background: 222 47% 10%;
+  --foreground: 40 30% 90%;
+  --card: 224 40% 14%;
+  --card-foreground: 40 30% 95%;
+  --popover: 224 40% 14%;
+  --popover-foreground: 40 30% 95%;
+  --primary: 43 80% 55%;
+  --primary-foreground: 222 47% 10%;
+  --secondary: 220 30% 20%;
+  --secondary-foreground: 40 30% 95%;
+  --muted: 220 30% 20%;
+  --muted-foreground: 218 15% 65%;
+  --accent: 43 80% 55%;
+  --accent-foreground: 222 47% 10%;
+  --success: 150 50% 50%;
+  --warning: 43 70% 55%;
+  --destructive: 0 75% 50%;
+  --destructive-foreground: 40 30% 95%;
+  --border: 220 30% 22%;
+  --input: 220 30% 22%;
+  --ring: 43 80% 55%;
+  --radius: 0.25rem;
+  --font-display: 'Playfair Display', serif;
+  --font-body: 'Lora', serif;
+}
+
+/* --- Sage Paper Theme --- */
+[data-theme="sage-paper"]:not(.dark) {
+  --background: 40 40% 96%;
+  --foreground: 150 50% 12%;
+  --card: 50 30% 98%;
+  --card-foreground: 150 50% 12%;
+  --popover: 50 30% 98%;
+  --popover-foreground: 150 50% 12%;
+  --primary: 142 45% 30%;
+  --primary-foreground: 40 40% 96%;
+  --secondary: 140 25% 90%;
+  --secondary-foreground: 150 50% 12%;
+  --muted: 40 20% 90%;
+  --muted-foreground: 150 15% 40%;
+  --accent: 142 45% 30%;
+  --accent-foreground: 40 40% 96%;
+  --success: 142 45% 30%;
+  --warning: 35 60% 40%;
+  --destructive: 5 70% 45%;
+  --destructive-foreground: 50 30% 98%;
+  --border: 140 20% 85%;
+  --input: 140 20% 85%;
+  --ring: 142 45% 30%;
+  --radius: 1rem;
+  --font-display: 'Outfit', sans-serif;
+  --font-body: 'Plus Jakarta Sans', sans-serif;
+}
+[data-theme="sage-paper"].dark {
+  --background: 150 30% 10%;
+  --foreground: 45 25% 85%;
+  --card: 150 25% 14%;
+  --card-foreground: 45 25% 90%;
+  --popover: 150 25% 14%;
+  --popover-foreground: 45 25% 90%;
+  --primary: 140 50% 55%;
+  --primary-foreground: 150 30% 10%;
+  --secondary: 150 20% 20%;
+  --secondary-foreground: 45 25% 90%;
+  --muted: 150 20% 20%;
+  --muted-foreground: 145 15% 60%;
+  --accent: 140 50% 55%;
+  --accent-foreground: 150 30% 10%;
+  --success: 140 50% 55%;
+  --warning: 35 50% 55%;
+  --destructive: 0 60% 48%;
+  --destructive-foreground: 45 25% 90%;
+  --border: 150 20% 22%;
+  --input: 150 20% 22%;
+  --ring: 140 50% 55%;
+  --radius: 1rem;
+  --font-display: 'Outfit', sans-serif;
+  --font-body: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* --- Terminal Theme --- */
+[data-theme="terminal"]:not(.dark) {
+  --background: 120 20% 90%;
+  --foreground: 120 100% 12%;
+  --card: 120 15% 85%;
+  --card-foreground: 120 100% 12%;
+  --popover: 120 15% 85%;
+  --popover-foreground: 120 100% 12%;
+  --primary: 120 100% 22%;
+  --primary-foreground: 120 20% 90%;
+  --secondary: 120 15% 80%;
+  --secondary-foreground: 120 100% 12%;
+  --muted: 120 15% 80%;
+  --muted-foreground: 120 50% 25%;
+  --accent: 120 100% 22%;
+  --accent-foreground: 120 20% 90%;
+  --success: 120 100% 22%;
+  --warning: 60 100% 22%;
+  --destructive: 0 100% 28%;
+  --destructive-foreground: 120 20% 90%;
+  --border: 120 40% 55%;
+  --input: 120 40% 55%;
+  --ring: 120 100% 22%;
+  --radius: 0px;
+  --font-display: 'Fira Code', monospace;
+  --font-body: 'Fira Code', monospace;
+}
+[data-theme="terminal"].dark {
+  --background: 120 100% 2%;
+  --foreground: 120 100% 50%;
+  --card: 120 100% 4%;
+  --card-foreground: 120 100% 50%;
+  --popover: 120 100% 4%;
+  --popover-foreground: 120 100% 50%;
+  --primary: 120 100% 45%;
+  --primary-foreground: 120 100% 2%;
+  --secondary: 120 100% 8%;
+  --secondary-foreground: 120 100% 50%;
+  --muted: 120 100% 8%;
+  --muted-foreground: 120 100% 30%;
+  --accent: 120 100% 45%;
+  --accent-foreground: 120 100% 2%;
+  --success: 120 100% 45%;
+  --warning: 60 100% 45%;
+  --destructive: 0 100% 45%;
+  --destructive-foreground: 120 100% 2%;
+  --border: 120 100% 20%;
+  --input: 120 100% 20%;
+  --ring: 120 100% 45%;
+  --radius: 0px;
+  --font-display: 'Fira Code', monospace;
+  --font-body: 'Fira Code', monospace;
+}
+
+/* --- Coral Bloom Theme --- */
+[data-theme="coral-bloom"]:not(.dark) {
+  --background: 15 70% 97%;
+  --foreground: 15 60% 15%;
+  --card: 0 100% 99%;
+  --card-foreground: 15 60% 15%;
+  --popover: 0 100% 99%;
+  --popover-foreground: 15 60% 15%;
+  --primary: 14 80% 58%;
+  --primary-foreground: 15 70% 97%;
+  --secondary: 15 50% 92%;
+  --secondary-foreground: 15 60% 15%;
+  --muted: 15 40% 90%;
+  --muted-foreground: 15 30% 45%;
+  --accent: 14 80% 58%;
+  --accent-foreground: 15 70% 97%;
+  --success: 140 50% 45%;
+  --warning: 28 75% 55%;
+  --destructive: 350 75% 45%;
+  --destructive-foreground: 0 100% 99%;
+  --border: 15 40% 86%;
+  --input: 15 40% 86%;
+  --ring: 14 80% 58%;
+  --radius: 1.25rem;
+  --font-display: 'Fredoka', sans-serif;
+  --font-body: 'Quicksand', sans-serif;
+}
+[data-theme="coral-bloom"].dark {
+  --background: 15 40% 12%;
+  --foreground: 15 60% 90%;
+  --card: 15 35% 16%;
+  --card-foreground: 15 60% 95%;
+  --popover: 15 35% 16%;
+  --popover-foreground: 15 60% 95%;
+  --primary: 14 90% 68%;
+  --primary-foreground: 15 40% 12%;
+  --secondary: 15 30% 22%;
+  --secondary-foreground: 15 60% 95%;
+  --muted: 15 30% 22%;
+  --muted-foreground: 15 20% 65%;
+  --accent: 14 90% 68%;
+  --accent-foreground: 15 40% 12%;
+  --success: 140 60% 55%;
+  --warning: 28 85% 65%;
+  --destructive: 355 80% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 15 30% 26%;
+  --input: 15 30% 26%;
+  --ring: 14 90% 68%;
+  --radius: 1.25rem;
+  --font-display: 'Fredoka', sans-serif;
+  --font-body: 'Quicksand', sans-serif;
+}
+
+/* --- Global Theme overrides --- */
+h1, h2, h3, h4, h5, h6, .font-display {
+  font-family: var(--font-display), sans-serif;
+}
+body, p, span, button, input, select, textarea, table, tr, td, th, .font-body {
+  font-family: var(--font-body), sans-serif;
+}
+
+/* Apply transitions to make changes smooth */
+html {
+  transition: background-color 0.4s ease, color 0.4s ease, border-color 0.4s ease;
+}
+body, .rounded-xl, .bg-white, .border, .text-slate-900, .text-slate-500, button, input, select {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+}

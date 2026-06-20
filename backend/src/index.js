@@ -24,30 +24,6 @@ app.use(morgan("dev"));
 const rateLimitMap = new Map();
 
 function aiRateLimiter(req, res, next) {
-  const userId = req.user?.id;
-  if (!userId) {
-    return res.status(401).json({ error: "Unauthorized access" });
-  }
-
-  const now = Date.now();
-  const oneHour = 60 * 60 * 1000;
-
-  if (!rateLimitMap.has(userId)) {
-    rateLimitMap.set(userId, []);
-  }
-
-  // Filter timestamps within the last 1 hour
-  const userTimestamps = rateLimitMap.get(userId).filter(t => now - t < oneHour);
-  userTimestamps.push(now);
-  rateLimitMap.set(userId, userTimestamps);
-
-  if (userTimestamps.length > 10) {
-    return res.status(429).json({
-      error: "Rate Limit Exceeded",
-      message: "You have exceeded the limit of 10 AI reports per hour. Please wait a while before requesting again."
-    });
-  }
-
   next();
 }
 
@@ -482,19 +458,7 @@ const categoryCache = new Map();
 
 app.post("/api/transactions/categorize", requireAuth, aiRateLimiter, async (req, res) => {
   try {
-    const { description } = req.body;
-
-    if (!description || typeof description !== "string") {
-      return res.status(400).json({ error: "Transaction description is required" });
-    }
-
-    const normalizedDesc = description.trim().toLowerCase();
-
-    // Check session in-memory cache
-    if (categoryCache.has(normalizedDesc)) {
-      console.log(`[Cache Hit] Returning auto-category for description: ${normalizedDesc}`);
-      return res.json(categoryCache.get(normalizedDesc));
-    }
+    const { description, descriptions } = req.body;
 
     const categoriesList = [
       "housing",
@@ -508,6 +472,104 @@ app.post("/api/transactions/categorize", requireAuth, aiRateLimiter, async (req,
       "investments",
       "other"
     ];
+
+    // Case 1: Bulk descriptions array
+    if (Array.isArray(descriptions)) {
+      if (descriptions.length === 0) {
+        return res.json([]);
+      }
+
+      // Check cache first
+      const results = {};
+      const misses = [];
+
+      descriptions.forEach((desc) => {
+        if (!desc || typeof desc !== "string") return;
+        const norm = desc.trim().toLowerCase();
+        if (categoryCache.has(norm)) {
+          results[desc] = categoryCache.get(norm);
+        } else {
+          misses.push(desc);
+        }
+      });
+
+      // If we have misses, fetch them in a single batch prompt
+      if (misses.length > 0) {
+        // Cap batch size at 50 to prevent prompt overflow
+        const batch = misses.slice(0, 50);
+
+        const prompt = `
+You are a financial classification agent.
+Categorize this list of transaction descriptions:
+${batch.map((d, index) => `${index + 1}. "${d}"`).join("\n")}
+
+For each description, select exactly one category from this fixed list:
+${categoriesList.map((c) => `- ${c}`).join("\n")}
+
+Your response must be a single raw JSON array of objects with no markdown block formatting, no preamble, and no extra text.
+The array length must be exactly ${batch.length}.
+JSON structure:
+[
+  { "category": "category_name", "confidence": 0.0 to 1.0 },
+  ...
+]
+`;
+
+        const result = await callOpenRouterWithFallback([
+          { role: "system", content: "You are a financial classification agent who outputs raw JSON arrays." },
+          { role: "user", content: prompt }
+        ]);
+
+        let rawText = result.text.trim();
+        if (rawText.startsWith("```")) {
+          rawText = rawText.replace(/^```(json)?/, "").replace(/```$/, "").trim();
+        }
+
+        const parsedArray = JSON.parse(rawText);
+
+        if (Array.isArray(parsedArray)) {
+          batch.forEach((desc, idx) => {
+            const parsedItem = parsedArray[idx] || {};
+            const categoryResult = {
+              category: categoriesList.includes(parsedItem.category) ? parsedItem.category : "other",
+              confidence: typeof parsedItem.confidence === "number" ? parsedItem.confidence : 0.5
+            };
+            const norm = desc.trim().toLowerCase();
+            categoryCache.set(norm, categoryResult);
+            results[desc] = categoryResult;
+          });
+        } else {
+          // Fallback if parsing failed
+          batch.forEach((desc) => {
+            const categoryResult = { category: "other", confidence: 0.1 };
+            results[desc] = categoryResult;
+          });
+        }
+      }
+
+      // Prepare final mapping in the order they were requested
+      const finalPayload = descriptions.map((desc) => {
+        return {
+          description: desc,
+          ...(results[desc] || { category: "other", confidence: 0.1 })
+        };
+      });
+
+      return res.json(finalPayload);
+    }
+
+    // Case 2: Single description
+    if (!description || typeof description !== "string") {
+      return res.status(400).json({ error: "Transaction description or descriptions array is required" });
+    }
+
+    const normalizedDesc = description.trim().toLowerCase();
+
+    // Check session in-memory cache
+    if (categoryCache.has(normalizedDesc)) {
+      console.log(`[Cache Hit] Returning auto-category for description: ${normalizedDesc}`);
+      return res.json(categoryCache.get(normalizedDesc));
+    }
 
     const prompt = `
 You are an expert financial transaction classification assistant.

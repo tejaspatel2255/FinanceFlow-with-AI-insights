@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useTransactions } from "../hooks/useTransactions";
+import { supabase } from "../lib/supabase";
 import {
   Calendar,
   Download,
@@ -13,8 +14,12 @@ import {
   X,
   Filter,
   RefreshCw,
+  Upload,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
+import CSVImportModal from "../components/transactions/CSVImportModal";
 
 // Form validation schema using Zod
 const transactionSchema = z.object({
@@ -58,7 +63,12 @@ export default function Transactions() {
 
   // State Management
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
+  
+  // AI Categorization states
+  const [aiCategorizing, setAiCategorizing] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState(null);
 
   // Filters State
   const [filterType, setFilterType] = useState("all"); 
@@ -81,6 +91,53 @@ export default function Transactions() {
   const editForm = useForm({
     resolver: zodResolver(transactionSchema),
   });
+
+  const watchedDescription = addForm.watch("description");
+  const watchedCategory = addForm.watch("category");
+
+  // Debounced auto-categorization API call
+  useEffect(() => {
+    if (!watchedDescription || watchedDescription.trim().length < 3) {
+      setAiSuggestion(null);
+      return;
+    }
+
+    const delayDebounce = setTimeout(async () => {
+      setAiCategorizing(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/transactions/categorize`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({ description: watchedDescription }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.category && data.category !== "other") {
+            setAiSuggestion(data);
+            addForm.setValue("category", data.category);
+          }
+        }
+      } catch (error) {
+        console.error("AI auto-categorize failed:", error);
+      } finally {
+        setAiCategorizing(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(delayDebounce);
+  }, [watchedDescription]);
+
+  // Remove Suggestion Badge if category is manually overridden
+  useEffect(() => {
+    if (aiSuggestion && watchedCategory !== aiSuggestion.category) {
+      setAiSuggestion(null);
+    }
+  }, [watchedCategory, aiSuggestion]);
 
   // Action Submit Handlers
   const onAddSubmit = (data) => {
@@ -326,19 +383,27 @@ export default function Transactions() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20 md:pb-6 text-foreground font-body">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Transactions</h1>
-          <p className="text-slate-500">Record payments and filter transaction records.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground font-display">Transactions</h1>
+          <p className="text-muted-foreground">Record payments and filter transaction records.</p>
         </div>
 
         <div className="flex space-x-3">
           <button
+            onClick={() => setIsImportOpen(true)}
+            className="inline-flex items-center justify-center space-x-1.5 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-all hover:bg-secondary/20"
+          >
+            <Upload className="h-4 w-4 text-muted-foreground" />
+            <span>Import CSV</span>
+          </button>
+
+          <button
             onClick={exportBrandedPDF}
             disabled={filteredTransactions.length === 0}
-            className="inline-flex items-center justify-center space-x-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:bg-slate-50 disabled:opacity-50"
+            className="inline-flex items-center justify-center space-x-1.5 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-all hover:bg-secondary/20 disabled:opacity-50"
           >
             <Download className="h-4 w-4" />
             <span>Export Statement PDF</span>
@@ -346,7 +411,7 @@ export default function Transactions() {
 
           <button
             onClick={() => setIsAddOpen(true)}
-            className="inline-flex items-center justify-center space-x-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white shadow-md shadow-primary/20 transition-all hover:bg-indigo-600"
+            className="inline-flex items-center justify-center space-x-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground shadow-md shadow-primary/20 transition-all hover:opacity-90"
           >
             <Plus className="h-4 w-4" />
             <span>Add Transaction</span>
@@ -355,18 +420,18 @@ export default function Transactions() {
       </div>
 
       {/* FILTER CONTROL PANEL */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-        <div className="flex items-center space-x-1.5 text-sm font-bold text-slate-700 border-b border-slate-100 pb-3">
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4 text-card-foreground">
+        <div className="flex items-center space-x-1.5 text-sm font-bold text-foreground border-b border-border pb-3">
           <Filter className="h-4 w-4 text-primary" />
           <span>Filter Records</span>
         </div>
 
         <div className="flex flex-wrap items-end gap-4">
           <div className="space-y-1.5">
-            <span className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+            <span className="block text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Type
             </span>
-            <div className="flex rounded-lg bg-slate-100 p-1 border border-slate-200">
+            <div className="flex rounded-lg bg-secondary/50 p-1 border border-border">
               {["all", "income", "expense"].map((type) => (
                 <button
                   key={type}
@@ -374,8 +439,8 @@ export default function Transactions() {
                   onClick={() => setFilterType(type)}
                   className={`rounded-md px-3.5 py-1 text-xs font-bold capitalize transition-all ${
                     filterType === type
-                      ? "bg-white text-slate-900 shadow-sm"
-                      : "text-slate-500 hover:text-slate-955"
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {type}
@@ -385,13 +450,13 @@ export default function Transactions() {
           </div>
 
           <div className="space-y-1.5">
-            <span className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+            <span className="block text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Category
             </span>
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 capitalize h-[34px]"
+              className="rounded-lg border border-border bg-background text-foreground px-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/20 capitalize h-[34px]"
             >
               <option value="all">All Categories</option>
               {CATEGORIES.map((cat) => (
@@ -404,25 +469,25 @@ export default function Transactions() {
 
           <div className="flex items-center space-x-2">
             <div className="space-y-1.5">
-              <span className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+              <span className="block text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 From Date
               </span>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 h-[34px]"
+                className="rounded-lg border border-border bg-background text-foreground px-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/20 h-[34px]"
               />
             </div>
             <div className="space-y-1.5">
-              <span className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+              <span className="block text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 To Date
               </span>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 h-[34px]"
+                className="rounded-lg border border-border bg-background text-foreground px-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/20 h-[34px]"
               />
             </div>
           </div>
@@ -430,7 +495,7 @@ export default function Transactions() {
           <button
             type="button"
             onClick={clearFilters}
-            className="flex items-center space-x-1 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors h-[34px]"
+            className="flex items-center space-x-1 rounded-lg border border-border bg-card px-4 py-2 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors h-[34px]"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             <span>Reset</span>
@@ -439,16 +504,16 @@ export default function Transactions() {
       </div>
 
       {/* Transactions Table Section */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="rounded-xl border border-border bg-card text-card-foreground shadow-sm overflow-hidden">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center p-12 space-y-2">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-            <p className="text-sm text-slate-500">Loading your transactions...</p>
+            <p className="text-sm text-muted-foreground">Loading your transactions...</p>
           </div>
         ) : filteredTransactions.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm text-slate-500">
-              <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-700 border-b border-slate-200">
+            <table className="w-full border-collapse text-left text-sm text-muted-foreground">
+              <thead className="bg-secondary/40 text-xs font-semibold uppercase text-foreground border-b border-border">
                 <tr>
                   <th className="px-6 py-4">Date</th>
                   <th className="px-6 py-4">Description</th>
@@ -458,17 +523,17 @@ export default function Transactions() {
                   <th className="px-6 py-4 text-center">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-border">
                 {filteredTransactions.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-slate-900 font-medium">
+                  <tr key={tx.id} className="hover:bg-secondary/20 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap text-foreground font-medium">
                       {tx.date}
                     </td>
-                    <td className="px-6 py-4 text-slate-600">
-                      {tx.description || <span className="text-slate-300 italic">None</span>}
+                    <td className="px-6 py-4 text-foreground/90">
+                      {tx.description || <span className="text-muted-foreground/60 italic">None</span>}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="capitalize px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-semibold">
+                      <span className="capitalize px-2 py-1 rounded bg-secondary text-foreground text-xs font-semibold">
                         {tx.category}
                       </span>
                     </td>
@@ -476,8 +541,8 @@ export default function Transactions() {
                       <span
                         className={`px-2.5 py-1 rounded-full text-xs font-bold ${
                           tx.type === "income"
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-rose-50 text-rose-700"
+                            ? "bg-success/10 text-success"
+                            : "bg-destructive/10 text-destructive"
                         }`}
                       >
                         {tx.type === "income" ? "Income" : "Expense"}
@@ -485,7 +550,7 @@ export default function Transactions() {
                     </td>
                     <td
                       className={`px-6 py-4 whitespace-nowrap text-right font-bold ${
-                        tx.type === "income" ? "text-emerald-600" : "text-rose-600"
+                        tx.type === "income" ? "text-success" : "text-destructive"
                       }`}
                     >
                       {tx.type === "income" ? "+" : "-"}₹{Number(tx.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
@@ -493,13 +558,13 @@ export default function Transactions() {
                     <td className="px-6 py-4 whitespace-nowrap text-center space-x-2">
                       <button
                         onClick={() => handleEditClick(tx)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-primary hover:bg-slate-50 transition-all"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-primary hover:bg-secondary transition-all"
                       >
                         <Edit2 className="h-3.5 w-3.5" />
                       </button>
                       <button
                         onClick={() => handleDeleteClick(tx.id)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-rose-600 hover:bg-slate-50 transition-all"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-destructive hover:bg-secondary transition-all"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -511,11 +576,11 @@ export default function Transactions() {
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center p-12 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary text-muted-foreground">
               <FileText className="h-6 w-6" />
             </div>
-            <h3 className="mt-4 text-sm font-semibold text-slate-900">No Transactions Found</h3>
-            <p className="mt-1 text-sm text-slate-500">
+            <h3 className="mt-4 text-sm font-semibold text-foreground font-display">No Transactions Found</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
               Try adjusting your filter settings or logging a new record.
             </p>
           </div>
@@ -525,41 +590,41 @@ export default function Transactions() {
       {/* ADD TRANSACTION MODAL */}
       {isAddOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-100 relative">
+          <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-xl border border-border relative text-card-foreground">
             <button
               onClick={() => setIsAddOpen(false)}
-              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600"
+              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"
             >
               <X className="h-5 w-5" />
             </button>
 
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Add Transaction</h3>
+            <h3 className="text-lg font-bold text-foreground mb-4 font-display">Add Transaction</h3>
 
             <form onSubmit={addForm.handleSubmit(onAddSubmit)} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-500">Amount (₹)</label>
+                <label className="block text-xs font-bold uppercase text-muted-foreground">Amount (₹)</label>
                 <input
                   type="text"
                   placeholder="0.00"
                   {...addForm.register("amount")}
-                  className={`mt-1.5 block w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                  className={`mt-1.5 block w-full rounded-lg border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
                     addForm.formState.errors.amount
-                      ? "border-rose-300 focus:border-rose-500 focus:ring-rose-200"
-                      : "border-slate-200 focus:border-primary focus:ring-primary/20"
+                      ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                      : "border-border focus:border-primary focus:ring-primary/20"
                   }`}
                 />
                 {addForm.formState.errors.amount && (
-                  <p className="mt-1 text-xs text-rose-500">
+                  <p className="mt-1 text-xs text-destructive">
                     {addForm.formState.errors.amount.message}
                   </p>
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-500">Type</label>
+                <label className="block text-xs font-bold uppercase text-muted-foreground">Type</label>
                 <select
                   {...addForm.register("type")}
-                  className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="expense">Expense</option>
                   <option value="income">Income</option>
@@ -567,10 +632,25 @@ export default function Transactions() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-500">Category</label>
+                <div className="flex items-center">
+                  <label className="block text-xs font-bold uppercase text-muted-foreground">Category</label>
+                  {aiSuggestion && (
+                    <span className="inline-flex items-center space-x-0.5 ml-2 rounded-full bg-primary/10 border border-primary/20 px-1.5 py-0.5 text-[9px] font-bold text-primary animate-fade-in shrink-0">
+                      <Sparkles className="h-2.5 w-2.5 text-primary animate-pulse" />
+                      <span>
+                        {aiSuggestion.confidence > 0.6
+                           ? "✨ AI suggested"
+                           : "Verify Category"}
+                      </span>
+                    </span>
+                  )}
+                  {aiCategorizing && (
+                    <span className="text-[9px] text-muted-foreground ml-2 animate-pulse">Analyzing...</span>
+                  )}
+                </div>
                 <select
                   {...addForm.register("category")}
-                  className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 capitalize"
+                  className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 capitalize"
                 >
                   {CATEGORIES.map((cat) => (
                     <option key={cat} value={cat}>
@@ -581,21 +661,21 @@ export default function Transactions() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-500">Date</label>
+                <label className="block text-xs font-bold uppercase text-muted-foreground">Date</label>
                 <input
                   type="date"
                   {...addForm.register("date")}
-                  className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-500">Description</label>
+                <label className="block text-xs font-bold uppercase text-muted-foreground">Description</label>
                 <input
                   type="text"
                   placeholder="e.g. Weekly Groceries"
                   {...addForm.register("description")}
-                  className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
 
@@ -603,14 +683,14 @@ export default function Transactions() {
                 <button
                   type="button"
                   onClick={() => setIsAddOpen(false)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-secondary/20"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={createMutation.isPending}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white hover:bg-indigo-600 disabled:opacity-50"
+                  className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-bold hover:opacity-90 disabled:opacity-50"
                 >
                   {createMutation.isPending ? "Adding..." : "Add"}
                 </button>
@@ -623,41 +703,41 @@ export default function Transactions() {
       {/* EDIT TRANSACTION MODAL */}
       {editingTransaction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-100 relative">
+          <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-xl border border-border relative text-card-foreground">
             <button
               onClick={() => setEditingTransaction(null)}
-              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600"
+              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"
             >
               <X className="h-5 w-5" />
             </button>
 
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Edit Transaction</h3>
+            <h3 className="text-lg font-bold text-foreground mb-4 font-display">Edit Transaction</h3>
 
             <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-500">Amount (₹)</label>
+                <label className="block text-xs font-bold uppercase text-muted-foreground">Amount (₹)</label>
                 <input
                   type="text"
                   placeholder="0.00"
                   {...editForm.register("amount")}
-                  className={`mt-1.5 block w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                  className={`mt-1.5 block w-full rounded-lg border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
                     editForm.formState.errors.amount
-                      ? "border-rose-300 focus:border-rose-500 focus:ring-rose-200"
-                      : "border-slate-200 focus:border-primary focus:ring-primary/20"
+                      ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                      : "border-border focus:border-primary focus:ring-primary/20"
                   }`}
                 />
                 {editForm.formState.errors.amount && (
-                  <p className="mt-1 text-xs text-rose-500">
+                  <p className="mt-1 text-xs text-destructive">
                     {editForm.formState.errors.amount.message}
                   </p>
                 )}
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-500">Type</label>
+                <label className="block text-xs font-bold uppercase text-muted-foreground">Type</label>
                 <select
                   {...editForm.register("type")}
-                  className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 >
                   <option value="expense">Expense</option>
                   <option value="income">Income</option>
@@ -665,10 +745,10 @@ export default function Transactions() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-500">Category</label>
+                <label className="block text-xs font-bold uppercase text-muted-foreground">Category</label>
                 <select
                   {...editForm.register("category")}
-                  className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 capitalize"
+                  className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 capitalize"
                 >
                   {CATEGORIES.map((cat) => (
                     <option key={cat} value={cat}>
@@ -679,21 +759,21 @@ export default function Transactions() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-500">Date</label>
+                <label className="block text-xs font-bold uppercase text-muted-foreground">Date</label>
                 <input
                   type="date"
                   {...editForm.register("date")}
-                  className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-500">Description</label>
+                <label className="block text-xs font-bold uppercase text-muted-foreground">Description</label>
                 <input
                   type="text"
                   placeholder="e.g. Weekly Groceries"
                   {...editForm.register("description")}
-                  className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
 
@@ -701,14 +781,14 @@ export default function Transactions() {
                 <button
                   type="button"
                   onClick={() => setEditingTransaction(null)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-secondary/20"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={updateMutation.isPending}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-white hover:bg-indigo-600 disabled:opacity-50"
+                  className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-bold hover:opacity-90 disabled:opacity-50"
                 >
                   {updateMutation.isPending ? "Updating..." : "Save Changes"}
                 </button>
@@ -717,6 +797,8 @@ export default function Transactions() {
           </div>
         </div>
       )}
+      {/* CSV IMPORT MODAL */}
+      <CSVImportModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} />
     </div>
   );
 }

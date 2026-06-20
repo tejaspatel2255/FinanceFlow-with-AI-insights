@@ -154,3 +154,32 @@ CREATE POLICY "Users can delete their own AI insights"
 
 -- Create index for performance
 CREATE INDEX IF NOT EXISTS idx_ai_insights_user_id ON public.ai_insights(user_id);
+
+
+-- ----------------------------------------------------------------------------
+-- 5. USER SETTINGS TABLE (Theme & Preferences)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.user_settings (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    theme_preference VARCHAR(30) NOT NULL DEFAULT 'original',
+    mode_preference VARCHAR(10) NOT NULL DEFAULT 'light',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Enable Row Level Security (RLS) for user_settings
+ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
+
+-- User Settings Policies
+CREATE POLICY "Users can view their own settings"
+    ON public.user_settings FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own settings"
+    ON public.user_settings FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own settings"
+    ON public.user_settings FOR UPDATE
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+

@@ -98,20 +98,20 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="w-full max-w-md space-y-8 rounded-2xl bg-white p-8 shadow-xl border border-slate-100">
+    <div className="flex min-h-screen items-center justify-center bg-background text-foreground px-4 py-12 sm:px-6 lg:px-8 font-body">
+      <div className="w-full max-w-md space-y-8 rounded-2xl bg-card p-8 shadow-xl border border-border text-card-foreground">
         
         {/* Header */}
         <div className="flex flex-col items-center">
           <img
             src="/logo.png"
             alt="FinanceFlow Logo"
-            className="h-16 w-16 rounded-2xl object-cover shadow-lg border border-slate-100"
+            className="h-16 w-16 rounded-2xl object-cover shadow-lg border border-border"
           />
-          <h2 className="mt-6 text-center text-3xl font-extrabold tracking-tight text-slate-900">
+          <h2 className="mt-6 text-center text-3xl font-extrabold tracking-tight text-foreground font-display">
             {isUpdateMode ? "Set New Password" : "Reset Password"}
           </h2>
-          <p className="mt-2 text-center text-sm text-slate-500">
+          <p className="mt-2 text-center text-sm text-muted-foreground">
             {isUpdateMode
               ? "Choose a strong password for your account"
               : "Enter your email to receive a recovery link"}
@@ -120,14 +120,14 @@ export default function ResetPassword() {
 
         {/* Global Messages */}
         {errorMsg && (
-          <div className="flex items-center space-x-2 rounded-lg bg-rose-50 p-4 text-sm text-rose-600 border border-rose-100">
+          <div className="flex items-center space-x-2 rounded-lg bg-destructive/10 p-4 text-sm text-destructive border border-destructive/20">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
         {successMsg && (
-          <div className="flex items-start space-x-2 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-700 border border-emerald-100">
+          <div className="flex items-start space-x-2 rounded-lg bg-success/10 p-4 text-sm text-success border border-success/20">
             <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
             <span>{successMsg}</span>
           </div>
@@ -138,48 +138,48 @@ export default function ResetPassword() {
           // UPDATE PASSWORD FORM (Recovery link landed)
           <form className="mt-8 space-y-4" onSubmit={updateForm.handleSubmit(onUpdateSubmit)}>
             <div>
-              <label className="block text-sm font-semibold text-slate-700">New Password</label>
+              <label className="block text-sm font-semibold text-foreground font-display">New Password</label>
               <div className="relative mt-1">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
                   <Lock className="h-4 w-4" />
                 </div>
                 <input
                   type="password"
                   {...updateForm.register("password")}
-                  className={`block w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 ${
+                  className={`block w-full rounded-lg border bg-background text-foreground py-2.5 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 ${
                     updateForm.formState.errors.password
-                      ? "border-rose-300 focus:border-rose-500 focus:ring-rose-200"
-                      : "border-slate-200 focus:border-primary focus:ring-primary/20"
+                      ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                      : "border-border focus:border-primary focus:ring-primary/20"
                   }`}
                   placeholder="•••••••• (Min 6 characters)"
                 />
               </div>
               {updateForm.formState.errors.password && (
-                <p className="mt-1 text-xs text-rose-500">
+                <p className="mt-1 text-xs text-destructive">
                   {updateForm.formState.errors.password.message}
                 </p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700">Confirm Password</label>
+              <label className="block text-sm font-semibold text-foreground font-display">Confirm Password</label>
               <div className="relative mt-1">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
                   <Lock className="h-4 w-4" />
                 </div>
                 <input
                   type="password"
                   {...updateForm.register("confirmPassword")}
-                  className={`block w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 ${
+                  className={`block w-full rounded-lg border bg-background text-foreground py-2.5 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 ${
                     updateForm.formState.errors.confirmPassword
-                      ? "border-rose-300 focus:border-rose-500 focus:ring-rose-200"
-                      : "border-slate-200 focus:border-primary focus:ring-primary/20"
+                      ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                      : "border-border focus:border-primary focus:ring-primary/20"
                   }`}
                   placeholder="••••••••"
                 />
               </div>
               {updateForm.formState.errors.confirmPassword && (
-                <p className="mt-1 text-xs text-rose-500">
+                <p className="mt-1 text-xs text-destructive">
                   {updateForm.formState.errors.confirmPassword.message}
                 </p>
               )}
@@ -189,10 +189,10 @@ export default function ResetPassword() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex w-full justify-center rounded-lg bg-primary py-2.5 px-4 text-sm font-bold text-white transition-all hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                className="flex w-full justify-center rounded-lg bg-primary py-2.5 px-4 text-sm font-bold text-primary-foreground transition-all hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
               >
                 {loading ? (
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent"></div>
                 ) : (
                   "Update Password"
                 )}
@@ -203,24 +203,24 @@ export default function ResetPassword() {
           // REQUEST RESET EMAIL FORM
           <form className="mt-8 space-y-4" onSubmit={requestForm.handleSubmit(onRequestSubmit)}>
             <div>
-              <label className="block text-sm font-semibold text-slate-700">Email Address</label>
+              <label className="block text-sm font-semibold text-foreground font-display">Email Address</label>
               <div className="relative mt-1">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
                   <Mail className="h-4 w-4" />
                 </div>
                 <input
                   type="email"
                   {...requestForm.register("email")}
-                  className={`block w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 ${
+                  className={`block w-full rounded-lg border bg-background text-foreground py-2.5 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 ${
                     requestForm.formState.errors.email
-                      ? "border-rose-300 focus:border-rose-500 focus:ring-rose-200"
-                      : "border-slate-200 focus:border-primary focus:ring-primary/20"
+                      ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                      : "border-border focus:border-primary focus:ring-primary/20"
                   }`}
                   placeholder="name@example.com"
                 />
               </div>
               {requestForm.formState.errors.email && (
-                <p className="mt-1 text-xs text-rose-500">
+                <p className="mt-1 text-xs text-destructive">
                   {requestForm.formState.errors.email.message}
                 </p>
               )}
@@ -230,10 +230,10 @@ export default function ResetPassword() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex w-full justify-center rounded-lg bg-primary py-2.5 px-4 text-sm font-bold text-white transition-all hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                className="flex w-full justify-center rounded-lg bg-primary py-2.5 px-4 text-sm font-bold text-primary-foreground transition-all hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
               >
                 {loading ? (
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent"></div>
                 ) : (
                   "Send Reset Link"
                 )}
@@ -242,7 +242,7 @@ export default function ResetPassword() {
           </form>
         )}
 
-        <div className="mt-6 text-center text-sm text-slate-500">
+        <div className="mt-6 text-center text-sm text-muted-foreground">
           Back to{" "}
           <Link to="/login" className="font-semibold text-primary hover:underline">
             Login

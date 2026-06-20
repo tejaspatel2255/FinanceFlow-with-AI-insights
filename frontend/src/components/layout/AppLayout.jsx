@@ -9,7 +9,7 @@ import MobileNav from "./MobileNav";
  */
 export default function AppLayout() {
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
+    <div className="min-h-screen flex flex-col bg-background text-foreground transition-all duration-300">
       {/* Top Banner Menu */}
       <Navbar />
 

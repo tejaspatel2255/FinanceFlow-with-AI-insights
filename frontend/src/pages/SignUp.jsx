@@ -51,37 +51,37 @@ export default function SignUp() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="w-full max-w-md space-y-8 rounded-2xl bg-white p-8 shadow-xl border border-slate-100">
+    <div className="flex min-h-screen items-center justify-center bg-background text-foreground px-4 py-12 sm:px-6 lg:px-8 font-body">
+      <div className="w-full max-w-md space-y-8 rounded-2xl bg-card p-8 shadow-xl border border-border text-card-foreground">
         
         {/* Branding header */}
         <div className="flex flex-col items-center">
           <img
             src="/logo.png"
             alt="FinanceFlow Logo"
-            className="h-16 w-16 rounded-2xl object-cover shadow-lg border border-slate-100"
+            className="h-16 w-16 rounded-2xl object-cover shadow-lg border border-border"
           />
-          <h2 className="mt-6 text-center text-3xl font-extrabold tracking-tight text-slate-900">
+          <h2 className="mt-6 text-center text-3xl font-extrabold tracking-tight text-foreground font-display">
             Create Account
           </h2>
-          <p className="mt-2 text-center text-sm text-slate-500">
+          <p className="mt-2 text-center text-sm text-muted-foreground">
             Start tracking and saving today
           </p>
         </div>
 
         {/* Global Error/Success messages */}
         {errorMsg && (
-          <div className="flex items-center space-x-2 rounded-lg bg-rose-50 p-4 text-sm text-rose-600 border border-rose-100">
+          <div className="flex items-center space-x-2 rounded-lg bg-destructive/10 p-4 text-sm text-destructive border border-destructive/20">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
         {successMsg && (
-          <div className="rounded-lg bg-emerald-50 p-4 text-sm text-emerald-700 border border-emerald-100">
+          <div className="rounded-lg bg-success/10 p-4 text-sm text-success border border-success/20">
             {successMsg}
             <div className="mt-3">
-              <Link to="/login" className="font-bold text-emerald-800 hover:underline">
+              <Link to="/login" className="font-bold text-success hover:underline">
                 Go to login page
               </Link>
             </div>
@@ -92,27 +92,27 @@ export default function SignUp() {
           <form className="mt-8 space-y-4" onSubmit={handleSubmit(onSubmit)}>
             {/* Name field */}
             <div>
-              <label htmlFor="name" className="block text-sm font-semibold text-slate-700">
+              <label htmlFor="name" className="block text-sm font-semibold text-foreground font-display">
                 Full Name
               </label>
               <div className="relative mt-1">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
                   <User className="h-4 w-4" />
                 </div>
                 <input
                   id="name"
                   type="text"
                   {...register("name")}
-                  className={`block w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 ${
+                  className={`block w-full rounded-lg border bg-background text-foreground py-2.5 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 ${
                     errors.name
-                      ? "border-rose-300 focus:border-rose-500 focus:ring-rose-200"
-                      : "border-slate-200 focus:border-primary focus:ring-primary/20"
+                      ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                      : "border-border focus:border-primary focus:ring-primary/20"
                   }`}
                   placeholder="John Doe"
                 />
               </div>
               {errors.name && (
-                <p className="mt-1 text-xs text-rose-500">{errors.name.message}</p>
+                <p className="mt-1 text-xs text-destructive">{errors.name.message}</p>
               )}
             </div>
 
@@ -122,75 +122,75 @@ export default function SignUp() {
                 Email Address
               </label>
               <div className="relative mt-1">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
                   <Mail className="h-4 w-4" />
                 </div>
                 <input
                   id="email"
                   type="email"
                   {...register("email")}
-                  className={`block w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 ${
+                  className={`block w-full rounded-lg border bg-background text-foreground py-2.5 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 ${
                     errors.email
-                      ? "border-rose-300 focus:border-rose-500 focus:ring-rose-200"
-                      : "border-slate-200 focus:border-primary focus:ring-primary/20"
+                      ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                      : "border-border focus:border-primary focus:ring-primary/20"
                   }`}
                   placeholder="name@example.com"
                 />
               </div>
               {errors.email && (
-                <p className="mt-1 text-xs text-rose-500">{errors.email.message}</p>
+                <p className="mt-1 text-xs text-destructive">{errors.email.message}</p>
               )}
             </div>
 
             {/* Password field */}
             <div>
-              <label htmlFor="password" className="block text-sm font-semibold text-slate-700">
+              <label htmlFor="password" className="block text-sm font-semibold text-foreground font-display">
                 Password
               </label>
               <div className="relative mt-1">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
                   <Lock className="h-4 w-4" />
                 </div>
                 <input
                   id="password"
                   type="password"
                   {...register("password")}
-                  className={`block w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 ${
+                  className={`block w-full rounded-lg border bg-background text-foreground py-2.5 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 ${
                     errors.password
-                      ? "border-rose-300 focus:border-rose-500 focus:ring-rose-200"
-                      : "border-slate-200 focus:border-primary focus:ring-primary/20"
+                      ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                      : "border-border focus:border-primary focus:ring-primary/20"
                   }`}
                   placeholder="•••••••• (Min 6 characters)"
                 />
               </div>
               {errors.password && (
-                <p className="mt-1 text-xs text-rose-500">{errors.password.message}</p>
+                <p className="mt-1 text-xs text-destructive">{errors.password.message}</p>
               )}
             </div>
 
             {/* Confirm Password field */}
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-semibold text-slate-700">
+              <label htmlFor="confirmPassword" className="block text-sm font-semibold text-foreground font-display">
                 Confirm Password
               </label>
               <div className="relative mt-1">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
                   <Lock className="h-4 w-4" />
                 </div>
                 <input
                   id="confirmPassword"
                   type="password"
                   {...register("confirmPassword")}
-                  className={`block w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 ${
+                  className={`block w-full rounded-lg border bg-background text-foreground py-2.5 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 ${
                     errors.confirmPassword
-                      ? "border-rose-300 focus:border-rose-500 focus:ring-rose-200"
-                      : "border-slate-200 focus:border-primary focus:ring-primary/20"
+                      ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                      : "border-border focus:border-primary focus:ring-primary/20"
                   }`}
                   placeholder="••••••••"
                 />
               </div>
               {errors.confirmPassword && (
-                <p className="mt-1 text-xs text-rose-500">{errors.confirmPassword.message}</p>
+                <p className="mt-1 text-xs text-destructive">{errors.confirmPassword.message}</p>
               )}
             </div>
 
@@ -198,10 +198,10 @@ export default function SignUp() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex w-full justify-center rounded-lg bg-primary py-2.5 px-4 text-sm font-bold text-white transition-all hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                className="flex w-full justify-center rounded-lg bg-primary py-2.5 px-4 text-sm font-bold text-primary-foreground transition-all hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
               >
                 {loading ? (
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent"></div>
                 ) : (
                   "Create Account"
                 )}
@@ -210,7 +210,7 @@ export default function SignUp() {
           </form>
         )}
 
-        <div className="mt-6 text-center text-sm text-slate-500">
+        <div className="mt-6 text-center text-sm text-muted-foreground">
           Already have an account?{" "}
           <Link to="/login" className="font-semibold text-primary hover:underline">
             Log in

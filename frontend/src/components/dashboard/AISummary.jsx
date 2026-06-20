@@ -34,7 +34,7 @@ function TypewriterEffect({ text }) {
     return () => clearInterval(timer);
   }, [text]);
 
-  return <span className="inline font-sans text-sm text-slate-700 leading-relaxed">{displayedText}</span>;
+  return <span className="inline font-body text-sm text-foreground/90 leading-relaxed">{displayedText}</span>;
 }
 
 export default function AISummary({ transactions = [] }) {
@@ -140,16 +140,16 @@ export default function AISummary({ transactions = [] }) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-body">
       
       {/* SECTION 1: Natural Language Query "Hero Feature" */}
-      <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/40 via-white to-purple-50/40 p-6 shadow-sm">
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex items-center space-x-2 text-primary mb-3">
           <HelpCircle className="h-5 w-5" />
-          <h3 className="text-lg font-bold text-slate-800">Ask FinanceFlow AI</h3>
+          <h3 className="text-lg font-bold text-foreground font-display">Ask FinanceFlow AI</h3>
         </div>
         
-        <p className="text-xs text-slate-500 mb-4">
+        <p className="text-xs text-muted-foreground mb-4">
           Query details about your transactions in plain English (e.g. "Identify how much I spent on groceries").
         </p>
 
@@ -159,12 +159,12 @@ export default function AISummary({ transactions = [] }) {
             value={askQuery}
             onChange={(e) => setAskQuery(e.target.value)}
             placeholder="Ask about your spending behavior..."
-            className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 placeholder-slate-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-semibold text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           <button
             type="submit"
             disabled={isChatLoading || !askQuery.trim()}
-            className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-primary/25 hover:bg-indigo-600 disabled:opacity-50 transition-all"
+            className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground shadow-md shadow-primary/25 hover:opacity-90 disabled:opacity-50 transition-all animate-transition"
           >
             {isChatLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -176,7 +176,7 @@ export default function AISummary({ transactions = [] }) {
 
         {/* NLQ Chat Error State */}
         {chatError && (
-          <div className="mt-4 flex items-center space-x-2 rounded-xl bg-rose-50 p-4 border border-rose-100 text-xs text-rose-600 font-semibold animate-shake">
+          <div className="mt-4 flex items-center space-x-2 rounded-xl bg-destructive/10 p-4 border border-destructive/20 text-xs text-destructive font-semibold animate-shake">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{chatError}</span>
           </div>
@@ -184,15 +184,11 @@ export default function AISummary({ transactions = [] }) {
 
         {/* NLQ Chat Success State with Typewriter Reveal */}
         {chatResponse && (
-          <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50/50 p-4 space-y-2">
+          <div className="mt-4 rounded-xl border border-border bg-secondary/35 p-4 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                 Response Output
               </span>
-              <div className="flex items-center space-x-1.5 text-[10px] font-semibold text-slate-500">
-                <Cpu className="h-3 w-3" />
-                <span>{formatModelLabel(chatResponse.modelUsed)}</span>
-              </div>
             </div>
             <div className="pt-1">
               <TypewriterEffect text={chatResponse.answer} />
@@ -205,27 +201,21 @@ export default function AISummary({ transactions = [] }) {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <Sparkles className="h-5 w-5 text-indigo-500 animate-pulse" />
-            <h3 className="text-lg font-bold text-slate-800">Financial Insights</h3>
+            <Sparkles className="h-5 w-5 text-primary animate-pulse" />
+            <h3 className="text-lg font-bold text-foreground font-display">Financial Insights</h3>
           </div>
-          {report && (
-            <span className="inline-flex items-center space-x-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-100">
-              <Cpu className="h-3 w-3" />
-              <span>{formatModelLabel(report.modelUsed)}</span>
-            </span>
-          )}
         </div>
 
         {/* ERROR STATE */}
         {reportError && (
-          <div className="rounded-xl border border-rose-100 bg-rose-50 p-5 flex items-start space-x-3 text-rose-700">
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-5 flex items-start space-x-3 text-destructive">
             <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
             <div className="space-y-2">
               <h4 className="font-bold text-sm">Failed to generate insights</h4>
               <p className="text-xs leading-relaxed opacity-90">{reportError.message}</p>
               <button
                 onClick={() => refetchReport()}
-                className="mt-2 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-700 transition-colors"
+                className="mt-2 rounded-lg bg-destructive px-3 py-1.5 text-xs font-bold text-destructive-foreground hover:opacity-90 transition-colors"
               >
                 Try Again
               </button>
@@ -237,14 +227,14 @@ export default function AISummary({ transactions = [] }) {
         {isReportLoading && (
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="animate-pulse rounded-2xl border border-slate-100 bg-white p-5 space-y-4">
+              <div key={i} className="animate-pulse rounded-2xl border border-border bg-card p-5 space-y-4">
                 <div className="flex items-center justify-between">
-                  <div className="h-4 w-24 rounded bg-slate-200"></div>
-                  <div className="h-8 w-8 rounded-lg bg-slate-100"></div>
+                  <div className="h-4 w-24 rounded bg-secondary"></div>
+                  <div className="h-8 w-8 rounded-lg bg-secondary/70"></div>
                 </div>
                 <div className="space-y-2">
-                  <div className="h-3 w-full rounded bg-slate-200"></div>
-                  <div className="h-3 w-5/6 rounded bg-slate-200"></div>
+                  <div className="h-3 w-full rounded bg-secondary"></div>
+                  <div className="h-3 w-5/6 rounded bg-secondary"></div>
                 </div>
               </div>
             ))}
@@ -256,61 +246,61 @@ export default function AISummary({ transactions = [] }) {
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             
             {/* Card 1: Pattern */}
-            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/10 p-5 flex flex-col justify-between transition-all hover:shadow-sm">
+            <div className="rounded-2xl border border-primary/25 bg-primary/5 p-5 flex flex-col justify-between transition-all hover:shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">
+                <span className="text-xs font-bold text-primary uppercase tracking-wider font-display">
                   Spending Pattern
                 </span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
                   <TrendingUp className="h-4.5 w-4.5" />
                 </div>
               </div>
-              <p className="mt-4 text-xs font-semibold leading-relaxed text-slate-700">
+              <p className="mt-4 text-xs font-semibold leading-relaxed text-foreground/90">
                 {report.pattern}
               </p>
             </div>
 
             {/* Card 2: Alert */}
-            <div className="rounded-2xl border border-amber-100 bg-amber-50/10 p-5 flex flex-col justify-between transition-all hover:shadow-sm">
+            <div className="rounded-2xl border border-destructive/25 bg-destructive/5 p-5 flex flex-col justify-between transition-all hover:shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">
+                <span className="text-xs font-bold text-destructive uppercase tracking-wider font-display">
                   Budget Alerts
                 </span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
                   <AlertTriangle className="h-4.5 w-4.5" />
                 </div>
               </div>
-              <p className="mt-4 text-xs font-semibold leading-relaxed text-slate-700">
+              <p className="mt-4 text-xs font-semibold leading-relaxed text-foreground/90">
                 {report.alert}
               </p>
             </div>
 
             {/* Card 3: Forecast */}
-            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/10 p-5 flex flex-col justify-between transition-all hover:shadow-sm">
+            <div className="rounded-2xl border border-success/25 bg-success/5 p-5 flex flex-col justify-between transition-all hover:shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
+                <span className="text-xs font-bold text-success uppercase tracking-wider font-display">
                   Savings Forecast
                 </span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-success/10 text-success">
                   <PiggyBank className="h-4.5 w-4.5" />
                 </div>
               </div>
-              <p className="mt-4 text-xs font-semibold leading-relaxed text-slate-700">
+              <p className="mt-4 text-xs font-semibold leading-relaxed text-foreground/90">
                 {report.forecast}
               </p>
             </div>
 
             {/* Card 4: Anomaly */}
-            <div className="rounded-2xl border border-purple-100 bg-purple-50/10 p-5 flex flex-col justify-between transition-all hover:shadow-sm">
+            <div className="rounded-2xl border border-border bg-card p-5 flex flex-col justify-between transition-all hover:shadow-sm">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-purple-700 uppercase tracking-wider">
+                <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider font-display">
                   Anomalies Detected
                 </span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 text-purple-600">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-foreground">
                   <Eye className="h-4.5 w-4.5" />
                 </div>
               </div>
-              <p className="mt-4 text-xs font-semibold leading-relaxed text-slate-700">
+              <p className="mt-4 text-xs font-semibold leading-relaxed text-foreground/90">
                 {report.anomaly}
               </p>
             </div>

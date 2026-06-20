@@ -96,24 +96,24 @@ export default function Budgets() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20 md:pb-6 text-foreground">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Budgets</h1>
-        <p className="text-slate-500">Set limits on spending categories to maximize savings.</p>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground font-display">Budgets</h1>
+        <p className="text-muted-foreground font-body">Set limits on spending categories to maximize savings.</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* BUDGET CREATION FORM */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm h-fit">
-          <h2 className="text-lg font-bold text-slate-900 mb-4">Set Category Budget</h2>
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm h-fit text-card-foreground">
+          <h2 className="text-lg font-bold text-foreground mb-4 font-display">Set Category Budget</h2>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold uppercase text-slate-500">Category</label>
+              <label className="block text-xs font-bold uppercase text-muted-foreground font-display">Category</label>
               <select
                 {...register("category")}
-                className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 capitalize"
+                className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 capitalize font-body"
               >
                 {CATEGORIES.map((cat) => (
                   <option key={cat} value={cat}>
@@ -124,27 +124,27 @@ export default function Budgets() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase text-slate-500">Limit Amount (₹)</label>
+              <label className="block text-xs font-bold uppercase text-muted-foreground font-display">Limit Amount (₹)</label>
               <input
                 type="text"
                 placeholder="0.00"
                 {...register("amount")}
-                className={`mt-1.5 block w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                className={`mt-1.5 block w-full rounded-lg border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 font-body ${
                   errors.amount
-                    ? "border-rose-300 focus:border-rose-500 focus:ring-rose-200"
-                    : "border-slate-200 focus:border-primary focus:ring-primary/20"
+                    ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                    : "border-border focus:border-primary focus:ring-primary/20"
                 }`}
               />
               {errors.amount && (
-                <p className="mt-1 text-xs text-rose-500">{errors.amount.message}</p>
+                <p className="mt-1 text-xs text-destructive font-body">{errors.amount.message}</p>
               )}
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase text-slate-500">Period</label>
+              <label className="block text-xs font-bold uppercase text-muted-foreground font-display">Period</label>
               <select
                 {...register("period")}
-                className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 font-body"
               >
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
@@ -155,10 +155,10 @@ export default function Budgets() {
             <button
               type="submit"
               disabled={upsertMutation.isPending}
-              className="flex w-full justify-center rounded-lg bg-primary py-2.5 px-4 text-sm font-bold text-white transition-all hover:bg-indigo-600 disabled:opacity-50"
+              className="flex w-full justify-center rounded-lg bg-primary py-2.5 px-4 text-sm font-bold text-primary-foreground transition-all hover:opacity-90 disabled:opacity-50 font-body"
             >
               {upsertMutation.isPending ? (
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent"></div>
               ) : (
                 <span className="flex items-center space-x-1">
                   <Plus className="h-4 w-4" />
@@ -171,12 +171,12 @@ export default function Budgets() {
 
         {/* BUDGETS LIST GRID */}
         <div className="lg:col-span-2 space-y-4">
-          <h2 className="text-lg font-bold text-slate-900">Active Budget Tracks</h2>
+          <h2 className="text-lg font-bold text-foreground font-display">Active Budget Tracks</h2>
 
           {isBudgetsLoading || isTxLoading ? (
-            <div className="flex flex-col items-center justify-center p-12 space-y-2 border border-slate-200 rounded-xl bg-white">
+            <div className="flex flex-col items-center justify-center p-12 space-y-2 border border-border rounded-xl bg-card text-card-foreground">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-              <p className="text-sm text-slate-500">Loading active budgets...</p>
+              <p className="text-sm text-muted-foreground font-body">Loading active budgets...</p>
             </div>
           ) : budgets.length > 0 ? (
             <div className="grid gap-4 sm:grid-cols-2">
@@ -189,50 +189,50 @@ export default function Budgets() {
                 return (
                   <div
                     key={budget.id}
-                    className={`rounded-xl border p-5 bg-white shadow-sm flex flex-col justify-between transition-all hover:shadow-md ${
-                      isOverBudget ? "border-rose-200" : "border-slate-200"
+                    className={`rounded-xl border p-5 bg-card text-card-foreground shadow-sm flex flex-col justify-between transition-all hover:shadow-md ${
+                      isOverBudget ? "border-destructive/60 bg-destructive/5" : "border-border bg-card"
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold capitalize text-slate-700">
+                        <span className="text-sm font-bold capitalize text-foreground font-display">
                           {budget.category}
                         </span>
-                        <span className="text-xs uppercase font-bold text-slate-400">
+                        <span className="text-xs uppercase font-bold text-muted-foreground font-body">
                           {budget.period}
                         </span>
                       </div>
 
-                      <div className="mt-3 flex items-baseline justify-between text-slate-900">
+                      <div className="mt-3 flex items-baseline justify-between text-foreground">
                         <div>
-                          <span className="text-2xl font-bold">₹{spent.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
-                          <span className="text-xs text-slate-400"> spent</span>
+                          <span className="text-2xl font-bold font-display">₹{spent.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
+                          <span className="text-xs text-muted-foreground font-body"> spent</span>
                         </div>
-                        <span className="text-xs font-semibold text-slate-500">
+                        <span className="text-xs font-semibold text-muted-foreground font-body">
                           of ₹{limit.toLocaleString("en-IN", { maximumFractionDigits: 0 })} limit
                         </span>
                       </div>
 
                       {/* Progress bar wrapper */}
-                      <div className="mt-3 w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div className="mt-3 w-full bg-secondary rounded-full h-2 overflow-hidden">
                         <div
                           className={`h-2 rounded-full transition-all duration-500 ${
-                            isOverBudget ? "bg-rose-500" : "bg-primary"
+                            isOverBudget ? "bg-destructive" : "bg-primary"
                           }`}
                           style={{ width: `${Math.min(percentage, 100)}%` }}
                         ></div>
                       </div>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
                       <div className="flex items-center space-x-1">
                         {isOverBudget ? (
-                          <div className="flex items-center space-x-1 text-xs font-bold text-rose-600">
+                          <div className="flex items-center space-x-1 text-xs font-bold text-destructive font-body">
                             <AlertCircle className="h-3.5 w-3.5" />
                             <span>Over limit by ₹{(spent - limit).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
                           </div>
                         ) : (
-                          <span className="text-xs font-semibold text-slate-400">
+                          <span className="text-xs font-semibold text-muted-foreground font-body">
                             {100 - percentage}% budget remaining
                           </span>
                         )}
@@ -240,7 +240,7 @@ export default function Budgets() {
 
                       <button
                         onClick={() => handleDelete(budget.id)}
-                        className="text-slate-400 hover:text-rose-600 transition-colors"
+                        className="text-muted-foreground hover:text-destructive transition-colors"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -250,12 +250,12 @@ export default function Budgets() {
               })}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center p-12 text-center border border-slate-200 rounded-xl bg-white">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+            <div className="flex flex-col items-center justify-center p-12 text-center border border-border rounded-xl bg-card text-card-foreground">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary text-muted-foreground">
                 <Wallet className="h-6 w-6" />
               </div>
-              <h3 className="mt-4 text-sm font-semibold text-slate-900">No Budget Caps</h3>
-              <p className="mt-1 text-sm text-slate-500">
+              <h3 className="mt-4 text-sm font-semibold text-foreground font-display">No Budget Caps</h3>
+              <p className="mt-1 text-sm text-muted-foreground font-body">
                 Set category limits in the left form to stay on track.
               </p>
             </div>

@@ -6,14 +6,19 @@ FinanceFlow is a state-of-the-art personal finance tracker built with a Node.js 
 
 ## ✨ Key Features
 
+*   **🎨 Multi-Theme Appearance System**: Choose from 5 premium color themes ("Original", "Midnight Ledger", "Sage Paper", "Terminal", "Coral Bloom") and a unified Light/Dark mode toggle. Settings persist instantly across devices through Supabase synchronization and local storage fallback, loaded via an anti-flash inline script.
+*   **🎯 Savings Goals Tracker**: Set financial targets with specific deadlines. View interactive progress tracking, save funds directly to individual goals, and get real-time AI-engine forecasts showing if you are on track or behind.
+*   **📥 CSV Bulk Importer**: Import your statements in bulk with drag-and-drop. Auto-detect columns, validate transaction values against Zod schema rules, and review parsing logs before batch-submitting.
+*   **✨ AI Auto-Categorization**: Automatically classify new transaction entries based on descriptions using Gemini. It includes an in-memory session cache to optimize API requests and handles bulk classification during CSV imports.
 *   **📊 Interactive Dashboard**: Monitor net balance, monthly income, and expense metrics in real-time. Responsive area and donut charts render category allocations and 6-month trends.
 *   **🤖 OpenRouter Multi-Model Fallback Chain**: If a request to the primary AI model fails or times out, the backend automatically retries the next model in sequence:
     1.  `google/gemini-2.0-flash-001` (Primary)
     2.  `google/gemini-flash-1.5` (Secondary)
-    3.  `meta-llama/llama-3.1-8b-instruct:free` (Tertiary)
+    3.  `meta-llama/llama-3.3-70b-instruct:free` (Tertiary)
+    4.  `qwen/qwen-2.5-72b-instruct:free` (Quaternary)
+    5.  `openrouter/free` (Auto-routing)
 *   **💬 Natural Language Query (NLQ) Hero**: Search and ask questions about your cash flow in plain English (e.g., *"How much did I spend on groceries this month?"*). Responses feature custom typewriter reveal animations.
 *   **📑 Branded Statement Exports**: Download PDF balance sheets containing aggregated monthly totals, category breakdowns, and top transaction tables.
-*   **🛑 Automated Rate Limiting**: In-memory sliding window limiter restricting AI access to `10 requests/hour` per user to prevent API key abuse.
 *   **⚡ 24-Hour Insight Caching**: Financial pattern audits are cached inside Supabase for 24 hours, eliminating duplicate API costs and ensuring instant load times.
 *   **📱 Mobile-First Layout**: Adaptive UI utilizing collapsible sidebars on desktop and a sticky bottom navigation bar on mobile viewports.
 
@@ -21,10 +26,10 @@ FinanceFlow is a state-of-the-art personal finance tracker built with a Node.js 
 
 ## 🛠️ Tech Stack
 
-*   **Frontend**: React, Vite, Tailwind CSS, Recharts, TanStack Query, React Hook Form, Zod, jsPDF, Lucide Icons.
+*   **Frontend**: React, Vite, Tailwind CSS, Recharts, TanStack Query, React Hook Form, Zod, jsPDF, PapaParse, Lucide Icons.
 *   **Backend**: Node.js, Express, Cors, Morgan, Dotenv.
 *   **Database & Auth**: Supabase (PostgreSQL + Supabase Auth).
-*   **AI Engine**: OpenRouter Client (Gemini 2.0 Flash / Gemini 1.5 Flash / Llama 3.1).
+*   **AI Engine**: OpenRouter Client (Gemini 2.0 Flash / Gemini 1.5 Flash / Llama 3.3 / Qwen 2.5).
 
 ---
 
@@ -37,7 +42,7 @@ FinanceFlow/
 │   │   ├── config/
 │   │   │   └── supabase.js         # Supabase client backend setup
 │   │   ├── lib/
-│   │   │   └── openrouter.js       # OpenRouter client with failover & 10s timeouts
+│   │   │   └── openrouter.js       # OpenRouter client with failover & 20s timeouts
 │   │   ├── middleware/
 │   │   │   └── auth.js             # Supabase JWT authentication verifier
 │   │   └── index.js                # Express API router (Rate-limiting & caching)
@@ -48,24 +53,35 @@ FinanceFlow/
 │   │   ├── components/
 │   │   │   ├── dashboard/
 │   │   │   │   └── AISummary.jsx   # AI insights grids & NLQ chat box
+│   │   │   ├── transactions/
+│   │   │   │   └── CSVImportModal.jsx # Drag-and-drop CSV parser with Zod validation
 │   │   │   └── layout/
 │   │   │       ├── AppLayout.jsx   # Page wrapper managing responsive views
-│   │   │       ├── Navbar.jsx      # Top header menu & auth triggers
+│   │   │       ├── Navbar.jsx      # Top header swatch picker & mode toggle
 │   │   │       ├── Sidebar.jsx     # Desktop left navigation
 │   │   │       └── MobileNav.jsx   # Mobile bottom sticky navigation bar
 │   │   ├── context/
-│   │   │   └── AuthContext.jsx     # Global authentication provider
+│   │   │   ├── AuthContext.jsx     # Global authentication provider
+│   │   │   └── ThemeContext.jsx    # Theme preference manager & Supabase state syncing
+│   │   ├── hooks/
+│   │   │   ├── useBudgets.js       # State updates for budgets
+│   │   │   ├── useGoals.js         # State updates for goals
+│   │   │   └── useTransactions.js  # State updates for transactions
 │   │   ├── pages/
 │   │   │   ├── Login.jsx           # Account login page
 │   │   │   ├── SignUp.jsx          # Registration form
 │   │   │   ├── Dashboard.jsx       # Analytics graphs, stats, and budget progress
 │   │   │   ├── Transactions.jsx    # Segmented table lists & PDF statement exports
-│   │   │   └── Budgets.jsx         # Category budget targets
+│   │   │   ├── Budgets.jsx         # Category budget targets
+│   │   │   ├── Goals.jsx           # Savings Goals page (Forms, progress tracking, forecasts)
+│   │   │   └── Settings.jsx        # Live preview appearance & theme customizer
+│   │   ├── styles/
+│   │   │   └── themes.css          # CSS custom properties defining palettes & font-pairings
 │   │   └── App.jsx                 # Routes map
 │   ├── tailwind.config.js          # Tailwind styling tokens
 │   └── vite.config.js              # Vite bundler options
 └── supabase/
-    └── schema.sql                  # PostgreSQL Tables, Indexes, & RLS Policies
+    └── schema.sql                  # PostgreSQL Tables, Indexes, RLS Policies & User Settings
 ```
 
 ---
@@ -81,7 +97,7 @@ FinanceFlow/
 ### Step 1: Clone the Repo & Setup the Database
 1.  Log in to your **Supabase Dashboard** and create a new project.
 2.  Open the **SQL Editor** in your Supabase project.
-3.  Copy and paste the contents of `supabase/schema.sql` into the SQL Editor and click **Run**. This creates the `transactions`, `budgets`, `goals`, and `ai_insights` tables, sets up performance indexes, and enables RLS security.
+3.  Copy and paste the contents of `supabase/schema.sql` into the SQL Editor and click **Run**. This creates the `transactions`, `budgets`, `goals`, `ai_insights`, and `user_settings` tables, sets up performance indexes, and enables RLS security.
 
 ### Step 2: Configure Backend Environment Variables
 Navigate to the `backend/` folder and create a `.env` file:
