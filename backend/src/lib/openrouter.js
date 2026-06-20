@@ -1,10 +1,11 @@
 require("dotenv").config();
 
-// Fallback models order as requested
+// Robust fallback chain with corrected spelling and active free auto-routers
 const FALLBACK_MODELS = [
-  "google/gemini-2.0-flash-001",
-  "google/gemini-flash-1.5",
-  "meta-llama/llama-3.1-8b-instruct:free"
+  "google/gemini-2.0-flash-001",           // Primary choice
+  "google/gemini-1.5-flash",               // Corrected spelling (was: gemini-flash-1.5)
+  "meta-llama/llama-3.3-70b-instruct:free", // Active free tier model
+  "openrouter/free"                        // Free auto-router (always active for free accounts)
 ];
 
 /**
@@ -35,7 +36,7 @@ async function callOpenRouterWithFallback(messages, options = {}) {
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${apiKey}`,
-          "HTTP-Referer": "http://localhost:5173", // Application URL
+          "HTTP-Referer": "https://finance-flow-with-ai-insights.vercel.app", // Matches production
           "X-Title": "FinanceFlow",
         },
         body: JSON.stringify({
