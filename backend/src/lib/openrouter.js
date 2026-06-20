@@ -1,11 +1,12 @@
 require("dotenv").config();
 
-// Robust fallback chain with corrected spelling and active free auto-routers
+// Robust fallback chain with corrected spelling, active free models, and auto-router
 const FALLBACK_MODELS = [
-  "google/gemini-2.0-flash-001",           // Primary choice
-  "google/gemini-1.5-flash",               // Corrected spelling (was: gemini-flash-1.5)
-  "meta-llama/llama-3.3-70b-instruct:free", // Active free tier model
-  "openrouter/free"                        // Free auto-router (always active for free accounts)
+  "google/gemini-2.0-flash-001",
+  "google/gemini-flash-1.5",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "qwen/qwen-2.5-72b-instruct:free",
+  "openrouter/free"
 ];
 
 /**
@@ -27,16 +28,16 @@ async function callOpenRouterWithFallback(messages, options = {}) {
     try {
       console.log(`[OpenRouter] Attempting request using model: ${model}`);
       
-      // Setup timeout controller for 10 seconds per attempt
+      // Increased timeout to 20 seconds (20000ms) to prevent timeout aborts on slower free tier models
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${apiKey}`,
-          "HTTP-Referer": "https://finance-flow-with-ai-insights.vercel.app", // Matches production
+          "HTTP-Referer": "https://finance-flow-with-ai-insights.vercel.app",
           "X-Title": "FinanceFlow",
         },
         body: JSON.stringify({
@@ -68,7 +69,7 @@ async function callOpenRouterWithFallback(messages, options = {}) {
         model: model,
       };
     } catch (err) {
-      const errorMsg = err.name === "AbortError" ? "Request timed out (10s limit)" : err.message;
+      const errorMsg = err.name === "AbortError" ? "Request timed out (20s limit)" : err.message;
       console.warn(`[OpenRouter] Model ${model} failed: ${errorMsg}`);
       errors.push({ model, error: errorMsg });
     }
