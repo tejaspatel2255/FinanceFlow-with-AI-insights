@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 import { useTheme } from "../../context/ThemeContext";
@@ -53,6 +53,7 @@ export default function AISummary({ transactions = [] }) {
   const [chatResponse, setChatResponse] = useState(null);
   const [chatError, setChatError] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const forceRef = useRef(false);
 
   const getCurrencySymbol = (currency) => {
     const symbols = {
@@ -93,7 +94,10 @@ export default function AISummary({ transactions = [] }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ transactions: transactions.slice(0, 30) }),
+        body: JSON.stringify({ 
+          transactions: transactions.slice(0, 30),
+          force: forceRef.current
+        }),
       });
 
       if (!response.ok) {
@@ -236,7 +240,10 @@ export default function AISummary({ transactions = [] }) {
             )}
           </div>
           <button
-            onClick={() => refetchReport()}
+            onClick={() => {
+              forceRef.current = !!report;
+              refetchReport();
+            }}
             disabled={isReportLoading}
             className="inline-flex items-center justify-center space-x-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-md shadow-primary/25 hover:opacity-90 disabled:opacity-50 transition-all font-body w-fit"
           >

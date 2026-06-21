@@ -253,7 +253,7 @@ function sanitizeCurrencySymbols(text, correctSymbol) {
 app.post("/api/insights", requireAuth, aiRateLimiter, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { transactions = [] } = req.body;
+    const { transactions = [], force = false } = req.body;
 
     // Fetch user home currency using the helper function first
     const homeCurrency = await getUserHomeCurrency(userId);
@@ -274,8 +274,9 @@ app.post("/api/insights", requireAuth, aiRateLimiter, async (req, res) => {
     const now = Date.now();
     const twentyFourHours = 24 * 60 * 60 * 1000;
 
-    // Cache is only valid if less than 24 hours old AND its stored currency matches the user's current home_currency
-    const cacheIsValid = latestInsight && 
+    // Cache is only valid if not forced AND less than 24 hours old AND its stored currency matches the user's current home_currency
+    const cacheIsValid = !force && 
+      latestInsight && 
       latestInsight.currency === homeCurrency && 
       (now - new Date(latestInsight.created_at).getTime()) < twentyFourHours;
 
