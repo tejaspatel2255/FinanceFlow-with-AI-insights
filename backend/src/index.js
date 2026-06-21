@@ -677,6 +677,7 @@ app.post("/api/transactions", requireAuth, async (req, res) => {
       currency = "INR", 
       is_recurring = false,
       recurrence_frequency = null,
+      recurrence_interval_days = null,
       recurrence_end_date = null,
       parent_transaction_id = null
     } = req.body;
@@ -710,6 +711,7 @@ app.post("/api/transactions", requireAuth, async (req, res) => {
         exchange_rate_to_home: exchangeRate,
         is_recurring,
         recurrence_frequency,
+        recurrence_interval_days: is_recurring && recurrence_frequency === "custom" ? Number(recurrence_interval_days) : null,
         recurrence_end_date,
         parent_transaction_id,
         created_at: new Date().toISOString()
@@ -753,7 +755,7 @@ app.post("/api/transactions/generate-recurring", requireAuth, async (req, res) =
       const today = new Date();
       today.setHours(0,0,0,0);
 
-      let nextDate = calculateNextDate(refDate, template.recurrence_frequency);
+      let nextDate = calculateNextDate(refDate, template.recurrence_frequency, template.recurrence_interval_days);
 
       // Alert if recurring transaction is due within 3 days (once)
       const threeDaysFromNow = new Date();
@@ -836,7 +838,7 @@ app.post("/api/transactions/generate-recurring", requireAuth, async (req, res) =
           .eq("id", template.id);
 
         refDate = nextDate;
-        nextDate = calculateNextDate(refDate, template.recurrence_frequency);
+        nextDate = calculateNextDate(refDate, template.recurrence_frequency, template.recurrence_interval_days);
       }
     }
 
@@ -847,7 +849,7 @@ app.post("/api/transactions/generate-recurring", requireAuth, async (req, res) =
   }
 });
 
-function calculateNextDate(date, frequency) {
+function calculateNextDate(date, frequency, intervalDays) {
   const next = new Date(date);
   if (frequency === "weekly") {
     next.setDate(next.getDate() + 7);
@@ -855,6 +857,8 @@ function calculateNextDate(date, frequency) {
     next.setMonth(next.getMonth() + 1);
   } else if (frequency === "yearly") {
     next.setFullYear(next.getFullYear() + 1);
+  } else if (frequency === "custom" && intervalDays) {
+    next.setDate(next.getDate() + Number(intervalDays));
   }
   return next;
 }

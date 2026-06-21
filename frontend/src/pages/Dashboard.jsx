@@ -319,6 +319,8 @@ export default function Dashboard() {
         nextDate.setMonth(nextDate.getMonth() + 1);
       } else if (template.recurrence_frequency === "yearly") {
         nextDate.setFullYear(nextDate.getFullYear() + 1);
+      } else if (template.recurrence_frequency === "custom" && template.recurrence_interval_days) {
+        nextDate.setDate(nextDate.getDate() + Number(template.recurrence_interval_days));
       }
 
       const diffTime = nextDate - today;
@@ -738,7 +740,7 @@ export default function Dashboard() {
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-foreground truncate font-display">{item.description || "Recurring Payment"}</p>
                       <p className="text-[10px] text-muted-foreground capitalize font-body">
-                        {item.category} • {item.recurrence_frequency}
+                        {item.category} • {item.recurrence_frequency === "custom" ? `Every ${item.recurrence_interval_days} days` : item.recurrence_frequency}
                       </p>
                     </div>
                     <div className="text-right shrink-0">

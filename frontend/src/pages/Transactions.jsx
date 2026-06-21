@@ -38,7 +38,24 @@ const transactionSchema = z.object({
   currency: z.string().default("INR"),
   is_recurring: z.boolean().default(false),
   recurrence_frequency: z.string().optional().nullable(),
+  recurrence_interval_days: z
+    .union([
+      z.string().transform((val) => (val === "" ? null : Number(val))),
+      z.number(),
+      z.null()
+    ])
+    .optional()
+    .nullable(),
   recurrence_end_date: z.string().optional().nullable(),
+}).refine((data) => {
+  if (data.is_recurring && data.recurrence_frequency === "custom") {
+    const days = Number(data.recurrence_interval_days);
+    return !isNaN(days) && days > 0 && Number.isInteger(days) && days <= 3650;
+  }
+  return true;
+}, {
+  message: "Repeat interval in days is required and must be a positive integer (max 3650)",
+  path: ["recurrence_interval_days"]
 });
 
 const CATEGORIES = [
@@ -55,6 +72,55 @@ const CATEGORIES = [
 ];
 
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "JPY"];
+
+const getNextOccurrenceDate = (template) => {
+  if (!template) return "";
+  let refDate = template.last_generated_recurring 
+    ? new Date(template.last_generated_recurring) 
+    : new Date(template.date);
+  let nextDate = new Date(refDate);
+  if (template.recurrence_frequency === "weekly") {
+    nextDate.setDate(nextDate.getDate() + 7);
+  } else if (template.recurrence_frequency === "monthly") {
+    nextDate.setMonth(nextDate.getMonth() + 1);
+  } else if (template.recurrence_frequency === "yearly") {
+    nextDate.setFullYear(nextDate.getFullYear() + 1);
+  } else if (template.recurrence_frequency === "custom" && template.recurrence_interval_days) {
+    nextDate.setDate(nextDate.getDate() + Number(template.recurrence_interval_days));
+  }
+  return nextDate.toISOString().split("T")[0];
+};
+
+const getRecurrenceFrequencyText = (template) => {
+  if (!template) return "";
+  if (template.recurrence_frequency === "custom") {
+    return `Repeats every ${template.recurrence_interval_days || 28} days`;
+  }
+  return `Repeats ${template.recurrence_frequency}`;
+};
+
+const getRecurringPreviewText = (freq, days, startDate) => {
+  if (!startDate) return "";
+  const formattedDate = new Date(startDate).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+  if (freq === "weekly") {
+    return `This will repeat every week starting ${formattedDate}`;
+  }
+  if (freq === "monthly") {
+    return `This will repeat every month starting ${formattedDate}`;
+  }
+  if (freq === "yearly") {
+    return `This will repeat every year starting ${formattedDate}`;
+  }
+  if (freq === "custom") {
+    const intervalDays = days || 28;
+    return `This will repeat every ${intervalDays} days starting ${formattedDate}`;
+  }
+  return "";
+};
 
 export default function Transactions() {
   const { homeCurrency } = useTheme();
@@ -122,6 +188,7 @@ export default function Transactions() {
       currency: "INR",
       is_recurring: false,
       recurrence_frequency: "monthly",
+      recurrence_interval_days: "",
       recurrence_end_date: "",
     },
   });
@@ -138,6 +205,12 @@ export default function Transactions() {
   const watchedEditCurrency = editForm.watch("currency");
   const watchedAmount = addForm.watch("amount");
   const watchedEditAmount = editForm.watch("amount");
+  const watchedFrequency = addForm.watch("recurrence_frequency");
+  const watchedEditFrequency = editForm.watch("recurrence_frequency");
+  const watchedIntervalDays = addForm.watch("recurrence_interval_days");
+  const watchedEditIntervalDays = editForm.watch("recurrence_interval_days");
+  const watchedStartDate = addForm.watch("date");
+  const watchedEditStartDate = editForm.watch("date");
 
   // Fetch exchange rate preview in Add form
   useEffect(() => {
@@ -241,6 +314,7 @@ export default function Transactions() {
         currency: data.currency || "INR",
         is_recurring: data.is_recurring || false,
         recurrence_frequency: data.is_recurring ? data.recurrence_frequency : null,
+        recurrence_interval_days: (data.is_recurring && data.recurrence_frequency === "custom") ? Number(data.recurrence_interval_days) : null,
         recurrence_end_date: (data.is_recurring && data.recurrence_end_date) ? data.recurrence_end_date : null,
       },
       {
@@ -265,6 +339,7 @@ export default function Transactions() {
         currency: data.currency || "INR",
         is_recurring: data.is_recurring || false,
         recurrence_frequency: data.is_recurring ? data.recurrence_frequency : null,
+        recurrence_interval_days: (data.is_recurring && data.recurrence_frequency === "custom") ? Number(data.recurrence_interval_days) : null,
         recurrence_end_date: (data.is_recurring && data.recurrence_end_date) ? data.recurrence_end_date : null,
       },
       {
@@ -287,6 +362,7 @@ export default function Transactions() {
       currency: tx.currency || "INR",
       is_recurring: tx.is_recurring || false,
       recurrence_frequency: tx.recurrence_frequency || "monthly",
+      recurrence_interval_days: tx.recurrence_interval_days || "",
       recurrence_end_date: tx.recurrence_end_date || "",
     });
   };
@@ -774,9 +850,12 @@ export default function Transactions() {
                       <div className="flex items-center space-x-2">
                         <span>{tx.description || <span className="text-muted-foreground/60 italic">None</span>}</span>
                         {tx.is_recurring && !tx.parent_transaction_id && (
-                          <span className="inline-flex items-center space-x-1 rounded-full bg-primary/10 border border-primary/20 px-2 py-0.5 text-[9px] font-bold text-primary">
+                          <span 
+                            title={`${tx.recurrence_frequency === "custom" ? `Repeats every ${tx.recurrence_interval_days} days` : `Repeats ${tx.recurrence_frequency}`} · Next: ${getNextOccurrenceDate(tx)}`}
+                            className="inline-flex items-center space-x-1 rounded-full bg-primary/10 border border-primary/20 px-2 py-0.5 text-[9px] font-bold text-primary cursor-help"
+                          >
                             <RefreshCw className="h-2.5 w-2.5" />
-                            <span>Template</span>
+                            <span>{tx.recurrence_frequency === "custom" ? `Every ${tx.recurrence_interval_days}d` : tx.recurrence_frequency}</span>
                           </span>
                         )}
                         {tx.parent_transaction_id && (
@@ -1000,6 +1079,7 @@ export default function Transactions() {
                         <option value="weekly">Weekly</option>
                         <option value="monthly">Monthly</option>
                         <option value="yearly">Yearly</option>
+                        <option value="custom">Custom (days)</option>
                       </select>
                     </div>
                     <div>
@@ -1010,6 +1090,31 @@ export default function Transactions() {
                         className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                       />
                     </div>
+                    {watchedFrequency === "custom" && (
+                      <div className="col-span-2 animate-fade-in">
+                        <label className="block text-xs font-bold uppercase text-muted-foreground">Repeat every (days)</label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 28"
+                          {...addForm.register("recurrence_interval_days")}
+                          className={`mt-1.5 block w-full rounded-lg border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                            addForm.formState.errors.recurrence_interval_days
+                              ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                              : "border-border focus:border-primary focus:ring-primary/20"
+                          }`}
+                        />
+                        {addForm.formState.errors.recurrence_interval_days && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {addForm.formState.errors.recurrence_interval_days.message}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {getRecurringPreviewText(watchedFrequency, watchedIntervalDays, watchedStartDate) && (
+                      <div className="col-span-2 p-2.5 bg-primary/5 border border-primary/10 rounded-lg text-[11px] font-bold text-primary">
+                        {getRecurringPreviewText(watchedFrequency, watchedIntervalDays, watchedStartDate)}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1304,6 +1409,7 @@ export default function Transactions() {
                         <option value="weekly">Weekly</option>
                         <option value="monthly">Monthly</option>
                         <option value="yearly">Yearly</option>
+                        <option value="custom">Custom (days)</option>
                       </select>
                     </div>
                     <div>
@@ -1314,6 +1420,31 @@ export default function Transactions() {
                         className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                       />
                     </div>
+                    {watchedEditFrequency === "custom" && (
+                      <div className="col-span-2 animate-fade-in">
+                        <label className="block text-xs font-bold uppercase text-muted-foreground">Repeat every (days)</label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 28"
+                          {...editForm.register("recurrence_interval_days")}
+                          className={`mt-1.5 block w-full rounded-lg border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                            editForm.formState.errors.recurrence_interval_days
+                              ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                              : "border-border focus:border-primary focus:ring-primary/20"
+                          }`}
+                        />
+                        {editForm.formState.errors.recurrence_interval_days && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {editForm.formState.errors.recurrence_interval_days.message}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {getRecurringPreviewText(watchedEditFrequency, watchedEditIntervalDays, watchedEditStartDate) && (
+                      <div className="col-span-2 p-2.5 bg-primary/5 border border-primary/10 rounded-lg text-[11px] font-bold text-primary">
+                        {getRecurringPreviewText(watchedEditFrequency, watchedEditIntervalDays, watchedEditStartDate)}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
