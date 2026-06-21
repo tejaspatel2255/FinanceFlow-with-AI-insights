@@ -281,27 +281,8 @@ app.post("/api/insights", requireAuth, aiRateLimiter, async (req, res) => {
       }
     }
 
-    // Fetch user home currency
-    const { data: userSettings } = await supabaseAdmin
-      .from("user_settings")
-      .select("home_currency")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    const homeCurrency = userSettings?.home_currency || "INR";
-
-    const getCurrencySymbol = (currency) => {
-      const symbols = {
-        INR: "₹",
-        USD: "$",
-        EUR: "€",
-        GBP: "£",
-        AED: "د.إ",
-        JPY: "¥"
-      };
-      return symbols[currency] || "₹";
-    };
-
+    // Fetch user home currency using the helper function
+    const homeCurrency = await getUserHomeCurrency(userId);
     const currencySymbol = getCurrencySymbol(homeCurrency);
 
     const { data: budgets = [] } = await supabaseAdmin
@@ -364,7 +345,22 @@ JSON Format:
       rawText = rawText.replace(/^```(json)?/, "").replace(/```$/, "").trim();
     }
 
-    const parsedData = JSON.parse(rawText);
+    let parsedData = {};
+    try {
+      parsedData = JSON.parse(rawText);
+    } catch (e) {
+      // Robust fallback JSON parsing using regex matching
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsedData = JSON.parse(jsonMatch[0]);
+        } catch (innerError) {
+          throw new Error("Failed to parse AI response: " + innerError.message);
+        }
+      } else {
+        throw new Error("Invalid JSON format in AI response: " + e.message);
+      }
+    }
 
     // Safety net post-process: Replace stray "$" followed by digits with the correct symbol
     const sanitizeStrayDollars = (text, targetSymbol) => {
