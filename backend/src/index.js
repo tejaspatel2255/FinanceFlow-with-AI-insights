@@ -711,7 +711,8 @@ app.post("/api/transactions", requireAuth, async (req, res) => {
         is_recurring,
         recurrence_frequency,
         recurrence_end_date,
-        parent_transaction_id
+        parent_transaction_id,
+        created_at: new Date().toISOString()
       })
       .select()
       .single();
@@ -815,7 +816,8 @@ app.post("/api/transactions/generate-recurring", requireAuth, async (req, res) =
               currency: template.currency || "INR",
               exchange_rate_to_home: template.exchange_rate_to_home || 1.0,
               is_recurring: false,
-              parent_transaction_id: template.id
+              parent_transaction_id: template.id,
+              created_at: new Date().toISOString()
             })
             .select()
             .single();
@@ -1085,14 +1087,16 @@ app.post("/api/transactions/bulk-import", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Bulk import limit exceeded. Max 1000 rows allowed." });
     }
 
-    const rowsToInsert = transactions.map((tx) => ({
+    const baseTime = Date.now();
+    const rowsToInsert = transactions.map((tx, idx) => ({
       user_id: userId,
       amount: parseFloat(tx.amount),
       type: tx.type,
       category: tx.category || "other",
       date: tx.date,
       description: tx.description || null,
-      tags: Array.isArray(tx.tags) ? tx.tags : []
+      tags: Array.isArray(tx.tags) ? tx.tags : [],
+      created_at: new Date(baseTime + idx).toISOString()
     }));
 
     const { data, error } = await supabaseAdmin
