@@ -10,3 +10,6 @@ ALTER COLUMN created_at SET DEFAULT NOW();
 UPDATE public.transactions
 SET created_at = COALESCE(created_at, date::timestamp with time zone, NOW())
 WHERE created_at IS NULL;
+
+-- 3. Create composite index to optimize sorting performance
+CREATE INDEX IF NOT EXISTS idx_transactions_date_created_at ON public.transactions(date DESC, created_at DESC);

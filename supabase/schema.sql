@@ -44,6 +44,7 @@ CREATE POLICY "Users can delete their own transactions"
 -- Create indexes for performance optimization
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON public.transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON public.transactions(date);
+CREATE INDEX IF NOT EXISTS idx_transactions_date_created_at ON public.transactions(date DESC, created_at DESC);
 
 
 -- ----------------------------------------------------------------------------
