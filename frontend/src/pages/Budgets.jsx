@@ -3,6 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useBudgets } from "../hooks/useBudgets";
 import { useTransactions } from "../hooks/useTransactions";
+import { useTheme } from "../context/ThemeContext";
 import { AlertCircle, PiggyBank, Plus, Trash2, Wallet } from "lucide-react";
 
 // Form validation schema with Zod
@@ -31,6 +32,22 @@ const CATEGORIES = [
 ];
 
 export default function Budgets() {
+  const { homeCurrency } = useTheme();
+
+  const getCurrencySymbol = (currency) => {
+    const symbols = {
+      INR: "₹",
+      USD: "$",
+      EUR: "€",
+      GBP: "£",
+      AED: "د.إ",
+      JPY: "¥"
+    };
+    return symbols[currency] || "₹";
+  };
+
+  const currencySymbol = getCurrencySymbol(homeCurrency);
+
   const { useGetBudgets, useUpsertBudget, useDeleteBudget } = useBudgets();
   const { useGetTransactions } = useTransactions();
 
@@ -76,7 +93,7 @@ export default function Budgets() {
     }
   };
 
-  // Helper to calculate total spent in a category for the current calendar month
+  // Helper to calculate total spent in a category for the current calendar month (converted to Home Currency)
   const getCategorySpendingThisMonth = (category) => {
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
@@ -89,7 +106,7 @@ export default function Budgets() {
         txDate.getMonth() === currentMonth &&
         txDate.getFullYear() === currentYear
       ) {
-        return total + Number(tx.amount);
+        return total + (Number(tx.amount) * (tx.exchange_rate_to_home || 1.0));
       }
       return total;
     }, 0);
@@ -124,7 +141,7 @@ export default function Budgets() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase text-muted-foreground font-display">Limit Amount (₹)</label>
+              <label className="block text-xs font-bold uppercase text-muted-foreground font-display">Limit Amount ({currencySymbol})</label>
               <input
                 type="text"
                 placeholder="0.00"
@@ -205,11 +222,11 @@ export default function Budgets() {
 
                       <div className="mt-3 flex items-baseline justify-between text-foreground">
                         <div>
-                          <span className="text-2xl font-bold font-display">₹{spent.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
+                          <span className="text-2xl font-bold font-display">{currencySymbol}{spent.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
                           <span className="text-xs text-muted-foreground font-body"> spent</span>
                         </div>
                         <span className="text-xs font-semibold text-muted-foreground font-body">
-                          of ₹{limit.toLocaleString("en-IN", { maximumFractionDigits: 0 })} limit
+                          of {currencySymbol}{limit.toLocaleString("en-IN", { maximumFractionDigits: 0 })} limit
                         </span>
                       </div>
 
@@ -229,11 +246,11 @@ export default function Budgets() {
                         {isOverBudget ? (
                           <div className="flex items-center space-x-1 text-xs font-bold text-destructive font-body">
                             <AlertCircle className="h-3.5 w-3.5" />
-                            <span>Over limit by ₹{(spent - limit).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
+                            <span>Over limit by {currencySymbol}{(spent - limit).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
                           </div>
                         ) : (
                           <span className="text-xs font-semibold text-muted-foreground font-body">
-                            {100 - percentage}% budget remaining
+                            {Math.max(0, 100 - percentage)}% budget remaining
                           </span>
                         )}
                       </div>

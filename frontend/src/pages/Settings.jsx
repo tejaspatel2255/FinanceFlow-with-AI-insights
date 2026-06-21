@@ -1,5 +1,5 @@
 import { useTheme } from "../context/ThemeContext";
-import { Sun, Moon, Palette, Check, Wallet, Plus, ArrowUpRight, Target } from "lucide-react";
+import { Sun, Moon, Palette, Check, Wallet, Plus, ArrowUpRight } from "lucide-react";
 
 const themesList = [
   { id: "original", name: "Original", bg: "#f1f5f9", accent: "#3b82f6" },
@@ -10,7 +10,21 @@ const themesList = [
 ];
 
 export default function Settings() {
-  const { theme, setTheme, mode, setMode, toggleMode } = useTheme();
+  const { theme, setTheme, mode, setMode, homeCurrency, setHomeCurrency } = useTheme();
+
+  const getCurrencySymbol = (currency) => {
+    const symbols = {
+      INR: "₹",
+      USD: "$",
+      EUR: "€",
+      GBP: "£",
+      AED: "د.إ",
+      JPY: "¥"
+    };
+    return symbols[currency] || "₹";
+  };
+
+  const currencySymbol = getCurrencySymbol(homeCurrency);
 
   return (
     <div className="space-y-6 pb-24 md:pb-6">
@@ -26,10 +40,10 @@ export default function Settings() {
           <div>
             <h2 className="text-lg font-bold flex items-center space-x-2 font-display">
               <Palette className="h-5 w-5 text-primary" />
-              <span>Appearance Settings</span>
+              <span>Preferences & Themes</span>
             </h2>
             <p className="text-xs text-muted-foreground mt-1 font-body">
-              Customize the look and feel of your FinanceFlow space. Changes are applied instantly and synced to your profile.
+              Customize the look, feel, and localization of your FinanceFlow workspace.
             </p>
           </div>
 
@@ -71,10 +85,10 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* Swatch List */}
+          {/* Active Color Palette */}
           <div className="space-y-3">
             <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground font-display">Active Color Palette</h3>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2">
               {themesList.map((t) => {
                 const isActive = theme === t.id;
                 return (
@@ -111,6 +125,38 @@ export default function Settings() {
               })}
             </div>
           </div>
+
+          {/* Primary Home Currency Selector */}
+          <div className="space-y-3 pt-6 border-t border-border">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground font-display">Primary Home Currency</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {[
+                { code: "INR", symbol: "₹", name: "Indian Rupee" },
+                { code: "USD", symbol: "$", name: "US Dollar" },
+                { code: "EUR", symbol: "€", name: "Euro" },
+                { code: "GBP", symbol: "£", name: "British Pound" },
+                { code: "AED", symbol: "د.إ", name: "UAE Dirham" },
+                { code: "JPY", symbol: "¥", name: "Japanese Yen" }
+              ].map((c) => {
+                const isActive = homeCurrency === c.code;
+                return (
+                  <button
+                    key={c.code}
+                    onClick={() => setHomeCurrency(c.code)}
+                    className={`flex flex-col items-center justify-center rounded-xl border p-4 text-center transition-all ${
+                      isActive
+                        ? "border-primary bg-primary/5 text-primary shadow-sm"
+                        : "border-border hover:bg-secondary text-foreground"
+                    }`}
+                  >
+                    <span className="text-xl font-bold font-display">{c.symbol}</span>
+                    <span className="text-xs font-extrabold mt-1 font-body">{c.code}</span>
+                    <span className="text-[10px] text-muted-foreground mt-0.5 font-body">{c.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Live Preview Card */}
@@ -138,7 +184,7 @@ export default function Settings() {
                 <Wallet className="h-4 w-4 text-primary" />
               </div>
               <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-bold font-display">₹45,280</span>
+                <span className="text-2xl font-bold font-display">{currencySymbol}45,280</span>
                 <span className="text-[10px] text-emerald-600 font-bold flex items-center bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 rounded">
                   <ArrowUpRight className="h-3 w-3 mr-0.5" /> +12%
                 </span>
@@ -155,8 +201,8 @@ export default function Settings() {
                 <div className="h-2 rounded-full bg-primary" style={{ width: "75%" }} />
               </div>
               <div className="flex justify-between items-center text-[10px] text-muted-foreground font-body">
-                <span>₹1,50,000 saved</span>
-                <span>of ₹2,00,000 target</span>
+                <span>{currencySymbol}1,50,000 saved</span>
+                <span>of {currencySymbol}2,00,000 target</span>
               </div>
             </div>
 

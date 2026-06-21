@@ -4,8 +4,8 @@ import { supabase } from "../../lib/supabase";
 import {
   TrendingUp,
   AlertTriangle,
-  PiggyBank,
-  Eye,
+  LineChart,
+  ShieldAlert,
   Sparkles,
   Send,
   Loader2,
@@ -52,7 +52,7 @@ export default function AISummary({ transactions = [] }) {
     });
   }, []);
 
-  // 1. Fetch AI Insights (POST request via React Query)
+  // 1. Fetch AI Insights (POST request via React Query) - Manual trigger only (enabled: false)
   const {
     data: report,
     isLoading: isReportLoading,
@@ -80,7 +80,7 @@ export default function AISummary({ transactions = [] }) {
       const resJson = await response.json();
       return resJson.insight;
     },
-    enabled: !!userId && transactions.length > 0,
+    enabled: false,
     retry: false, // Don't retry on rate limit errors
   });
 
@@ -199,11 +199,30 @@ export default function AISummary({ transactions = [] }) {
 
       {/* SECTION 2: 4-Card AI Insights Grid */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Sparkles className="h-5 w-5 text-primary animate-pulse" />
-            <h3 className="text-lg font-bold text-foreground font-display">Financial Insights</h3>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-1">
+          <div>
+            <div className="flex items-center space-x-2">
+              <Sparkles className="h-5 w-5 text-primary animate-pulse" />
+              <h3 className="text-lg font-bold text-foreground font-display">Financial Insights</h3>
+            </div>
+            {report && report.created_at && (
+              <p className="text-[10px] text-muted-foreground mt-0.5 font-body">
+                Last updated: {new Date(report.created_at).toLocaleString("en-IN")}
+              </p>
+            )}
           </div>
+          <button
+            onClick={() => refetchReport()}
+            disabled={isReportLoading}
+            className="inline-flex items-center justify-center space-x-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-md shadow-primary/25 hover:opacity-90 disabled:opacity-50 transition-all font-body w-fit"
+          >
+            {isReportLoading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5 shrink-0" />
+            )}
+            <span>{report ? "Refresh Insights" : "Generate Insights"}</span>
+          </button>
         </div>
 
         {/* ERROR STATE */}
@@ -241,67 +260,107 @@ export default function AISummary({ transactions = [] }) {
           </div>
         )}
 
-        {/* REPORT CONTENT DATA */}
-        {report && !isReportLoading && !reportError && (
+        {/* REPORT CONTENT DATA or IDLE STATE */}
+        {!isReportLoading && !reportError && (
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             
             {/* Card 1: Pattern */}
-            <div className="rounded-2xl border border-primary/25 bg-primary/5 p-5 flex flex-col justify-between transition-all hover:shadow-sm">
+            <div className={`rounded-2xl border p-5 flex flex-col justify-between transition-all hover:shadow-sm ${
+              report 
+                ? "border-primary/25 bg-primary/5" 
+                : "border-border bg-card opacity-60"
+            }`}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-primary uppercase tracking-wider font-display">
+                <span className={`text-xs font-bold uppercase tracking-wider font-display ${
+                  report ? "text-primary" : "text-muted-foreground"
+                }`}>
                   Spending Pattern
                 </span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                  report ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground"
+                }`}>
                   <TrendingUp className="h-4.5 w-4.5" />
                 </div>
               </div>
-              <p className="mt-4 text-xs font-semibold leading-relaxed text-foreground/90">
-                {report.pattern}
+              <p className={`mt-4 text-xs font-semibold leading-relaxed ${
+                report ? "text-foreground/90" : "text-muted-foreground/85 italic"
+              }`}>
+                {report ? report.pattern : "Run analysis to view your spending patterns."}
               </p>
             </div>
 
             {/* Card 2: Alert */}
-            <div className="rounded-2xl border border-destructive/25 bg-destructive/5 p-5 flex flex-col justify-between transition-all hover:shadow-sm">
+            <div className={`rounded-2xl border p-5 flex flex-col justify-between transition-all hover:shadow-sm ${
+              report 
+                ? "border-destructive/25 bg-destructive/5" 
+                : "border-border bg-card opacity-60"
+            }`}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-destructive uppercase tracking-wider font-display">
+                <span className={`text-xs font-bold uppercase tracking-wider font-display ${
+                  report ? "text-destructive" : "text-muted-foreground"
+                }`}>
                   Budget Alerts
                 </span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                  report ? "bg-destructive/10 text-destructive" : "bg-secondary text-muted-foreground"
+                }`}>
                   <AlertTriangle className="h-4.5 w-4.5" />
                 </div>
               </div>
-              <p className="mt-4 text-xs font-semibold leading-relaxed text-foreground/90">
-                {report.alert}
+              <p className={`mt-4 text-xs font-semibold leading-relaxed ${
+                report ? "text-foreground/90" : "text-muted-foreground/85 italic"
+              }`}>
+                {report ? report.alert : "Run analysis to check budget overruns."}
               </p>
             </div>
 
             {/* Card 3: Forecast */}
-            <div className="rounded-2xl border border-success/25 bg-success/5 p-5 flex flex-col justify-between transition-all hover:shadow-sm">
+            <div className={`rounded-2xl border p-5 flex flex-col justify-between transition-all hover:shadow-sm ${
+              report 
+                ? "border-success/25 bg-success/5" 
+                : "border-border bg-card opacity-60"
+            }`}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-success uppercase tracking-wider font-display">
+                <span className={`text-xs font-bold uppercase tracking-wider font-display ${
+                  report ? "text-success" : "text-muted-foreground"
+                }`}>
                   Savings Forecast
                 </span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-success/10 text-success">
-                  <PiggyBank className="h-4.5 w-4.5" />
+                <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                  report ? "bg-success/10 text-success" : "bg-secondary text-muted-foreground"
+                }`}>
+                  <LineChart className="h-4.5 w-4.5" />
                 </div>
               </div>
-              <p className="mt-4 text-xs font-semibold leading-relaxed text-foreground/90">
-                {report.forecast}
+              <p className={`mt-4 text-xs font-semibold leading-relaxed ${
+                report ? "text-foreground/90" : "text-muted-foreground/85 italic"
+              }`}>
+                {report ? report.forecast : "Run analysis to project savings trajectory."}
               </p>
             </div>
 
             {/* Card 4: Anomaly */}
-            <div className="rounded-2xl border border-border bg-card p-5 flex flex-col justify-between transition-all hover:shadow-sm">
+            <div className={`rounded-2xl border p-5 flex flex-col justify-between transition-all hover:shadow-sm ${
+              report 
+                ? "border-warning/25 bg-warning/5" 
+                : "border-border bg-card opacity-60"
+            }`}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider font-display">
+                <span className={`text-xs font-bold uppercase tracking-wider font-display ${
+                  report ? "text-warning" : "text-muted-foreground"
+                }`}>
                   Anomalies Detected
                 </span>
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-foreground">
-                  <Eye className="h-4.5 w-4.5" />
+                <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                  report ? "bg-warning/10 text-warning" : "bg-secondary text-muted-foreground"
+                }`}>
+                  <ShieldAlert className="h-4.5 w-4.5" />
                 </div>
               </div>
-              <p className="mt-4 text-xs font-semibold leading-relaxed text-foreground/90">
-                {report.anomaly}
+              <p className={`mt-4 text-xs font-semibold leading-relaxed ${
+                report ? "text-foreground/90" : "text-muted-foreground/85 italic"
+              }`}>
+                {report ? report.anomaly : "Run analysis to scan for unusual expenditures."}
               </p>
             </div>
 

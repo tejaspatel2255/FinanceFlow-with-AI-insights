@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
+const { z } = require("zod");
 require("dotenv").config();
 
 // Middleware imports
@@ -18,10 +19,213 @@ app.use(cors());
 app.use(express.json());
 app.use(morgan("dev"));
 
-// ----------------------------------------------------------------------------
-// Rate Limiter: Max 10 requests per user per hour
-// ----------------------------------------------------------------------------
-const rateLimitMap = new Map();
+// In-memory cache for exchange rates
+const exchangeRateCache = new Map();
+const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
+
+// Helper to fetch/convert currency
+async function getExchangeRate(from, to) {
+  if (from === to) return 1.0;
+  const cacheKey = `${from}_${to}`;
+  const cached = exchangeRateCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < CACHE_DURATION)) {
+    return cached.rate;
+  }
+
+  try {
+    const res = await fetch(`https://open.er-api.com/v6/latest/${from}`);
+    if (!res.ok) throw new Error("Failed to fetch exchange rates");
+    const data = await res.json();
+    const rate = data.rates?.[to];
+    if (!rate) throw new Error(`Currency ${to} not found in rates for ${from}`);
+
+    // Store in cache
+    exchangeRateCache.set(cacheKey, { rate, timestamp: Date.now() });
+    // Also cache the reverse
+    exchangeRateCache.set(`${to}_${from}`, { rate: 1 / rate, timestamp: Date.now() });
+
+    return rate;
+  } catch (err) {
+    console.error("Exchange rate fetch error:", err);
+    throw err;
+  }
+}
+
+// Helper to get home currency for a user
+async function getUserHomeCurrency(userId) {
+  try {
+    const { data: settings } = await supabaseAdmin
+      .from("user_settings")
+      .select("home_currency")
+      .eq("user_id", userId)
+      .limit(1)
+      .maybeSingle();
+    return settings?.home_currency || "INR";
+  } catch (err) {
+    return "INR";
+  }
+}
+
+function getCurrencySymbol(currency) {
+  const symbols = {
+    INR: "₹",
+    USD: "$",
+    EUR: "€",
+    GBP: "£",
+    AED: "د.إ",
+    JPY: "¥"
+  };
+  return symbols[currency?.toUpperCase()] || currency || "₹";
+}
+
+async function getUserHomeCurrencySymbol(userId) {
+  const currency = await getUserHomeCurrency(userId);
+  return getCurrencySymbol(currency);
+}
+
+// Zod Schema for NLQ Quick Add
+const QuickAddSchema = z.object({
+  amount: z.number().positive(),
+  type: z.enum(["income", "expense"]),
+  category: z.enum([
+    "housing",
+    "groceries",
+    "utilities",
+    "entertainment",
+    "transportation",
+    "insurance",
+    "salary",
+    "freelance",
+    "investments",
+    "other"
+  ]),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // YYYY-MM-DD format
+  description: z.string().max(255).default("Quick add transaction")
+});
+
+// Reusable notifications checker functions
+async function checkAndTriggerTransactionNotifications(tx) {
+  const userId = tx.user_id;
+
+  // 1. Budget Exceeded check
+  try {
+    const monthStart = new Date(tx.date);
+    monthStart.setDate(1);
+    const monthStartStr = monthStart.toISOString().split("T")[0];
+
+    // Get the budget for this category
+    const { data: budget } = await supabaseAdmin
+      .from("budgets")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("category", tx.category)
+      .eq("period", "monthly")
+      .limit(1)
+      .maybeSingle();
+
+    if (budget) {
+      // Sum expenses in this category for this month (converting foreign amounts to home)
+      const { data: monthTxs } = await supabaseAdmin
+        .from("transactions")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("category", tx.category)
+        .eq("type", "expense")
+        .gte("date", monthStartStr);
+
+      let totalExpensesInHome = 0;
+      if (monthTxs) {
+        totalExpensesInHome = monthTxs.reduce((sum, t) => {
+          const rate = t.exchange_rate_to_home || 1.0;
+          return sum + (Number(t.amount) * rate);
+        }, 0);
+      }
+
+      const budgetAmount = Number(budget.amount);
+      const ratio = totalExpensesInHome / budgetAmount;
+
+      // Determine if they crossed 85% or 100%
+      let thresholdCrossed = null;
+      if (ratio >= 1.0) {
+        thresholdCrossed = 100;
+      } else if (ratio >= 0.85) {
+        thresholdCrossed = 85;
+      }
+
+      if (thresholdCrossed) {
+        // Check if we already sent a notification for this threshold, this category, and this month
+        const titleQuery = thresholdCrossed === 100 
+          ? `Budget Exceeded: ${tx.category}` 
+          : `Budget Warning (85%): ${tx.category}`;
+
+        const { data: existingNotif } = await supabaseAdmin
+          .from("notifications")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("type", "budget_exceeded")
+          .eq("title", titleQuery)
+          .gte("created_at", monthStartStr)
+          .limit(1)
+          .maybeSingle();
+
+        if (!existingNotif) {
+          const homeSymbol = await getUserHomeCurrencySymbol(userId);
+          const formattedTotal = totalExpensesInHome.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+          const formattedBudget = budgetAmount.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+          await supabaseAdmin.from("notifications").insert({
+            user_id: userId,
+            type: "budget_exceeded",
+            title: titleQuery,
+            message: thresholdCrossed === 100 
+              ? `You have exceeded your ${tx.category} budget! Spent: ${homeSymbol}${formattedTotal} of ${homeSymbol}${formattedBudget}.`
+              : `You have spent over 85% of your ${tx.category} budget! Spent: ${homeSymbol}${formattedTotal} of ${homeSymbol}${formattedBudget}.`,
+            related_id: budget.id
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error in budget exceeded notification check:", err);
+  }
+
+  // 2. Large Transaction check (amount > 2x average transaction size in that category over the last 3 months)
+  try {
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const threeMonthsAgoStr = threeMonthsAgo.toISOString().split("T")[0];
+
+    const { data: prevTxs } = await supabaseAdmin
+      .from("transactions")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("category", tx.category)
+      .eq("type", tx.type)
+      .gte("date", threeMonthsAgoStr);
+
+    if (prevTxs && prevTxs.length > 3) {
+      const sum = prevTxs.reduce((acc, t) => acc + (Number(t.amount) * (t.exchange_rate_to_home || 1.0)), 0);
+      const avg = sum / prevTxs.length;
+      const currentTxInHome = Number(tx.amount) * (tx.exchange_rate_to_home || 1.0);
+
+      if (currentTxInHome > 2 * avg) {
+        const homeSymbol = await getUserHomeCurrencySymbol(userId);
+        const formattedAmount = currentTxInHome.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+        const formattedAvg = avg.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+        await supabaseAdmin.from("notifications").insert({
+          user_id: userId,
+          type: "large_transaction",
+          title: `Large Transaction in ${tx.category}`,
+          message: `A transaction of ${homeSymbol}${formattedAmount} is more than double your 3-month average (${homeSymbol}${formattedAvg}) for ${tx.category}.`,
+          related_id: tx.id
+        });
+      }
+    }
+  } catch (err) {
+    console.error("Error in large transaction notification check:", err);
+  }
+}
 
 function aiRateLimiter(req, res, next) {
   next();
@@ -44,7 +248,6 @@ app.post("/api/insights", requireAuth, aiRateLimiter, async (req, res) => {
     const userId = req.user.id;
     const { transactions = [] } = req.body;
 
-    // 1. Check if the last cached insight is less than 24 hours old
     const { data: latestInsight, error: selectError } = await supabaseAdmin
       .from("ai_insights")
       .select("*")
@@ -78,21 +281,43 @@ app.post("/api/insights", requireAuth, aiRateLimiter, async (req, res) => {
       }
     }
 
-    // 2. Fetch budgets to give context to prompt
+    // Fetch user home currency
+    const { data: userSettings } = await supabaseAdmin
+      .from("user_settings")
+      .select("home_currency")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const homeCurrency = userSettings?.home_currency || "INR";
+
+    const getCurrencySymbol = (currency) => {
+      const symbols = {
+        INR: "₹",
+        USD: "$",
+        EUR: "€",
+        GBP: "£",
+        AED: "د.إ",
+        JPY: "¥"
+      };
+      return symbols[currency] || "₹";
+    };
+
+    const currencySymbol = getCurrencySymbol(homeCurrency);
+
     const { data: budgets = [] } = await supabaseAdmin
       .from("budgets")
       .select("*")
       .eq("user_id", userId);
 
-    console.log(`[Cache Miss/Expired] Querying OpenRouter for user: ${userId}`);
+    console.log(`[Cache Miss/Expired] Querying OpenRouter for user: ${userId} (${homeCurrency})`);
 
-    // 3. Build a structured prompt in INR currency
-    const txSummary = transactions.slice(0, 30).map(t => 
-      `- ${t.date}: ${t.type} of ₹${t.amount} in '${t.category}' (${t.description || "N/A"})`
-    ).join("\n");
+    const txSummary = transactions.slice(0, 30).map(t => {
+      const sym = getCurrencySymbol(t.currency || "INR");
+      return `- ${t.date}: ${t.type} of ${sym}${t.amount} in '${t.category}' (${t.description || "N/A"})`;
+    }).join("\n");
 
     const budgetSummary = budgets.map(b => 
-      `- '${b.category}': Limit ₹${b.amount}/${b.period}`
+      `- '${b.category}': Limit ${currencySymbol}${b.amount}/${b.period}`
     ).join("\n");
 
     const prompt = `
@@ -109,34 +334,31 @@ ${budgetSummary || "None set"}
 ---
 
 IMPORTANT CURRENCY INSTRUCTION:
-You MUST state all currency values in Indian Rupees (₹) and use Indian numbering formatting (lakhs/crores) where appropriate. 
-NEVER use the dollar sign ($) or USD in your response under any circumstances. Replace all dollars with Indian Rupees (₹).
+All monetary amounts in your response MUST be written using the currency symbol ${currencySymbol} (currency code: ${homeCurrency}). Do NOT use $ or any other symbol unless ${homeCurrency} is actually USD. Format amounts naturally for that currency (e.g. ${currencySymbol}1,000, and use local numbering/formatting conventions where relevant).
 
 Analyze this and output a JSON object. You MUST respond with ONLY a valid raw JSON object. 
 Do not wrap it in markdown code blocks like \`\`\`json. Do not include preambles.
 
 The JSON object must have exactly these keys:
-- "pattern": 1 sentence summarizing their top spending trend in ₹.
-- "alert": 1 sentence highlighting a budget overrun, high spending category, or caution in ₹.
-- "forecast": 1 sentence describing their year-end savings trajectory in ₹ based on these numbers.
-- "anomaly": 1 sentence identifying any suspicious, anomalous, or unusual transaction size or recurring cost in ₹ (or a positive savings indicator if none found).
+- "pattern": 1 sentence summarizing their top spending trend in ${currencySymbol}.
+- "alert": 1 sentence highlighting a budget overrun, high spending category, or caution in ${currencySymbol}.
+- "forecast": 1 sentence describing their year-end savings trajectory in ${currencySymbol} based on these numbers.
+- "anomaly": 1 sentence identifying any suspicious, anomalous, or unusual transaction size or recurring cost in ${currencySymbol} (or a positive savings indicator if none found).
 
 JSON Format:
 {
-  "pattern": "your sentence here in ₹",
-  "alert": "your sentence here in ₹",
-  "forecast": "your sentence here in ₹",
-  "anomaly": "your sentence here in ₹"
+  "pattern": "your sentence here in ${currencySymbol}",
+  "alert": "your sentence here in ${currencySymbol}",
+  "forecast": "your sentence here in ${currencySymbol}",
+  "anomaly": "your sentence here in ${currencySymbol}"
 }
 `;
 
-    // 4. Call OpenRouter with fallback chain
     const result = await callOpenRouterWithFallback([
-      { role: "system", content: "You are a specialized JSON finance agent who only communicates using Indian Rupee (₹)." },
+      { role: "system", content: `You are a specialized JSON finance agent who only communicates using the ${homeCurrency} currency symbol (${currencySymbol}).` },
       { role: "user", content: prompt }
     ]);
 
-    // Clean any markdown fences if present
     let rawText = result.text.trim();
     if (rawText.startsWith("```")) {
       rawText = rawText.replace(/^```(json)?/, "").replace(/```$/, "").trim();
@@ -144,16 +366,21 @@ JSON Format:
 
     const parsedData = JSON.parse(rawText);
 
-    // Ensure it complies with expected fields
+    // Safety net post-process: Replace stray "$" followed by digits with the correct symbol
+    const sanitizeStrayDollars = (text, targetSymbol) => {
+      if (!text) return "";
+      if (targetSymbol === "$") return text;
+      return text.replace(/\$\s?(\d+([.,]\d+)*)/g, `${targetSymbol}$1`);
+    };
+
     const parsedPayload = {
-      pattern: parsedData.pattern || "N/A",
-      alert: parsedData.alert || "N/A",
-      forecast: parsedData.forecast || "N/A",
-      anomaly: parsedData.anomaly || "N/A",
+      pattern: sanitizeStrayDollars(parsedData.pattern || "N/A", currencySymbol),
+      alert: sanitizeStrayDollars(parsedData.alert || "N/A", currencySymbol),
+      forecast: sanitizeStrayDollars(parsedData.forecast || "N/A", currencySymbol),
+      anomaly: sanitizeStrayDollars(parsedData.anomaly || "N/A", currencySymbol),
       modelUsed: result.model
     };
 
-    // 5. Store stringified JSON in the database
     const { data: insertedInsight, error: insertError } = await supabaseAdmin
       .from("ai_insights")
       .insert({
@@ -193,13 +420,12 @@ app.post("/api/chat", requireAuth, aiRateLimiter, async (req, res) => {
       return res.status(400).json({ error: "Missing query question" });
     }
 
-    // Context summary
     const txSummary = transactions.slice(0, 30).map(t => 
       `- ${t.date}: ${t.type} of ₹${t.amount} in '${t.category}' (${t.description || "N/A"})`
     ).join("\n");
 
     const prompt = `
-You are a helpful personal finance assistant.
+You are helpful personal finance assistant.
 Answer the user's question about their finances.
 
 User's Question: "${question}"
@@ -230,10 +456,9 @@ Provide a concise, friendly, and analytical answer in 2-3 sentences max. Focus o
 });
 
 // ----------------------------------------------------------------------------
-// PART A: SAVINGS GOALS TRACKER ENDPOINTS
+// SAVINGS GOALS TRACKER ENDPOINTS
 // ----------------------------------------------------------------------------
 
-// GET /api/goals - List user's goals
 app.get("/api/goals", requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -251,7 +476,6 @@ app.get("/api/goals", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/goals - Create a goal
 app.post("/api/goals", requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -281,12 +505,18 @@ app.post("/api/goals", requireAuth, async (req, res) => {
   }
 });
 
-// PUT /api/goals/:id - Update goal (e.g. add funds or edit fields)
 app.put("/api/goals/:id", requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
     const { id } = req.params;
     const { name, target_amount, current_amount, deadline } = req.body;
+
+    const { data: oldGoal } = await supabaseAdmin
+      .from("goals")
+      .select("*")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
 
     const updatePayload = {};
     if (name !== undefined) updatePayload.name = name;
@@ -303,6 +533,27 @@ app.put("/api/goals/:id", requireAuth, async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    // Check goal milestones reached
+    if (oldGoal && goal) {
+      const oldRatio = Number(oldGoal.current_amount) / Number(oldGoal.target_amount);
+      const newRatio = Number(goal.current_amount) / Number(goal.target_amount);
+
+      const thresholds = [0.25, 0.50, 0.75, 1.0];
+      for (const t of thresholds) {
+        if (oldRatio < t && newRatio >= t) {
+          const percent = t * 100;
+          await supabaseAdmin.from("notifications").insert({
+            user_id: userId,
+            type: "goal_milestone",
+            title: `Goal Milestone: ${percent}% reached!`,
+            message: `Congratulations! You have reached ${percent}% of your goal "${goal.name}".`,
+            related_id: goal.id
+          });
+        }
+      }
+    }
+
     res.json(goal);
   } catch (error) {
     console.error("Update Goal Error:", error);
@@ -310,7 +561,6 @@ app.put("/api/goals/:id", requireAuth, async (req, res) => {
   }
 });
 
-// DELETE /api/goals/:id - Delete a goal
 app.delete("/api/goals/:id", requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -332,13 +582,11 @@ app.delete("/api/goals/:id", requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/goals/:id/forecast - Generate AI Forecast for a specific goal
 app.get("/api/goals/:id/forecast", requireAuth, aiRateLimiter, async (req, res) => {
   try {
     const userId = req.user.id;
     const { id } = req.params;
 
-    // Fetch the specific goal
     const { data: goal, error: goalError } = await supabaseAdmin
       .from("goals")
       .select("*")
@@ -350,7 +598,6 @@ app.get("/api/goals/:id/forecast", requireAuth, aiRateLimiter, async (req, res) 
       return res.status(404).json({ error: "Goal not found" });
     }
 
-    // Calculate monthly savings rate from transactions of the last 3 months
     const threeMonthsAgo = new Date();
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
     const dateLimit = threeMonthsAgo.toISOString().split("T")[0];
@@ -362,14 +609,12 @@ app.get("/api/goals/:id/forecast", requireAuth, aiRateLimiter, async (req, res) 
       .gte("date", dateLimit);
 
     let totalIncome = 0;
-    let totalExpense = 0;
     transactions.forEach((tx) => {
       if (tx.type === "income") totalIncome += Number(tx.amount);
-      else totalIncome -= Number(tx.amount); // Wait, expense reduces overall pool
+      else totalIncome -= Number(tx.amount);
     });
 
-    // Actually savings is: Income - Expense
-    const netSavings = Math.max(0, totalIncome); // Keep positive
+    const netSavings = Math.max(0, totalIncome);
     const monthlySavingsRate = Math.max(0, netSavings / 3);
 
     const prompt = `
@@ -403,7 +648,364 @@ Return ONLY the raw sentence. No quotation marks, no preamble, and no markdown b
 });
 
 // ----------------------------------------------------------------------------
-// PART B: CSV BULK IMPORT ENDPOINT
+// TRANSACTIONS AND EXCHANGE RATE ENDPOINTS
+// ----------------------------------------------------------------------------
+
+// GET /api/exchange-rate - Fetch exchange rates with 1 hour caching
+app.get("/api/exchange-rate", requireAuth, async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) {
+    return res.status(400).json({ error: "Missing 'from' or 'to' currency parameters" });
+  }
+  try {
+    const rate = await getExchangeRate(from.toUpperCase(), to.toUpperCase());
+    res.json({ rate });
+  } catch (err) {
+    res.status(500).json({ error: err.message || "Failed to fetch exchange rate" });
+  }
+});
+
+// POST /api/transactions - Create transaction (multi-currency conversion, notifications triggers)
+app.post("/api/transactions", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { 
+      amount, 
+      type, 
+      category, 
+      date, 
+      description, 
+      tags = [], 
+      currency = "INR", 
+      is_recurring = false,
+      recurrence_frequency = null,
+      recurrence_end_date = null,
+      parent_transaction_id = null
+    } = req.body;
+
+    if (!amount || !type || !category) {
+      return res.status(400).json({ error: "Amount, type, and category are required" });
+    }
+
+    const homeCurrency = await getUserHomeCurrency(userId);
+
+    let exchangeRate = 1.0;
+    if (currency.toUpperCase() !== homeCurrency.toUpperCase()) {
+      try {
+        exchangeRate = await getExchangeRate(currency.toUpperCase(), homeCurrency.toUpperCase());
+      } catch (err) {
+        console.warn("Failed to fetch live exchange rate, falling back to 1.0:", err);
+      }
+    }
+
+    const { data: transaction, error } = await supabaseAdmin
+      .from("transactions")
+      .insert({
+        user_id: userId,
+        amount: parseFloat(amount),
+        type,
+        category,
+        date: date || new Date().toISOString().split("T")[0],
+        description,
+        tags,
+        currency: currency.toUpperCase(),
+        exchange_rate_to_home: exchangeRate,
+        is_recurring,
+        recurrence_frequency,
+        recurrence_end_date,
+        parent_transaction_id
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Trigger notification alerts on transaction creation
+    await checkAndTriggerTransactionNotifications(transaction);
+
+    res.status(201).json(transaction);
+  } catch (error) {
+    console.error("Create Transaction Error:", error);
+    res.status(500).json({ error: error.message || "Failed to create transaction" });
+  }
+});
+
+// POST /api/transactions/generate-recurring - Template engine
+app.post("/api/transactions/generate-recurring", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { data: templates, error: templateError } = await supabaseAdmin
+      .from("transactions")
+      .select("*")
+      .eq("is_recurring", true)
+      .is("parent_transaction_id", null)
+      .eq("user_id", userId);
+
+    if (templateError) throw templateError;
+
+    const generated = [];
+
+    for (const template of templates) {
+      let refDate = template.last_generated_recurring 
+        ? new Date(template.last_generated_recurring) 
+        : new Date(template.date);
+         
+      const endDate = template.recurrence_end_date ? new Date(template.recurrence_end_date) : null;
+      const today = new Date();
+      today.setHours(0,0,0,0);
+
+      let nextDate = calculateNextDate(refDate, template.recurrence_frequency);
+
+      // Alert if recurring transaction is due within 3 days (once)
+      const threeDaysFromNow = new Date();
+      threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
+      threeDaysFromNow.setHours(0,0,0,0);
+
+      if (nextDate <= threeDaysFromNow && nextDate > today) {
+        const nextDateStr = nextDate.toISOString().split("T")[0];
+        const { data: existingNotif } = await supabaseAdmin
+          .from("notifications")
+          .select("id")
+          .eq("user_id", template.user_id)
+          .eq("type", "recurring_due")
+          .eq("related_id", template.id)
+          .like("message", `%${nextDateStr}%`)
+          .limit(1)
+          .maybeSingle();
+
+        if (!existingNotif) {
+          const homeSymbol = await getUserHomeCurrencySymbol(template.user_id);
+          const amountInHome = Number(template.amount) * (template.exchange_rate_to_home || 1.0);
+          const formattedAmount = amountInHome.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+           
+          await supabaseAdmin.from("notifications").insert({
+            user_id: template.user_id,
+            type: "recurring_due",
+            title: `Upcoming Recurring Bill`,
+            message: `Your recurring transaction "${template.description || "Bill"}" of ${homeSymbol}${formattedAmount} is due on ${nextDateStr}.`,
+            related_id: template.id
+          });
+        }
+      }
+
+      while (nextDate <= today) {
+        if (endDate && nextDate > endDate) {
+          break;
+        }
+
+        const dateStr = nextDate.toISOString().split("T")[0];
+
+        const { data: existing, error: existError } = await supabaseAdmin
+          .from("transactions")
+          .select("id")
+          .eq("parent_transaction_id", template.id)
+          .eq("date", dateStr)
+          .limit(1)
+          .maybeSingle();
+
+        if (!existing && !existError) {
+          const { data: newTx, error: insertError } = await supabaseAdmin
+            .from("transactions")
+            .insert({
+              user_id: template.user_id,
+              amount: template.amount,
+              type: template.type,
+              category: template.category,
+              description: template.description,
+              tags: template.tags,
+              date: dateStr,
+              currency: template.currency || "INR",
+              exchange_rate_to_home: template.exchange_rate_to_home || 1.0,
+              is_recurring: false,
+              parent_transaction_id: template.id
+            })
+            .select()
+            .single();
+
+          if (insertError) {
+            console.error("Failed to generate recurring transaction:", insertError);
+          } else {
+            generated.push(newTx);
+            await checkAndTriggerTransactionNotifications(newTx);
+          }
+        }
+
+        await supabaseAdmin
+          .from("transactions")
+          .update({ last_generated_recurring: dateStr })
+          .eq("id", template.id);
+
+        refDate = nextDate;
+        nextDate = calculateNextDate(refDate, template.recurrence_frequency);
+      }
+    }
+
+    res.json({ success: true, generatedCount: generated.length, generated });
+  } catch (err) {
+    console.error("Generate recurring error:", err);
+    res.status(500).json({ error: err.message || "Failed to generate recurring transactions" });
+  }
+});
+
+function calculateNextDate(date, frequency) {
+  const next = new Date(date);
+  if (frequency === "weekly") {
+    next.setDate(next.getDate() + 7);
+  } else if (frequency === "monthly") {
+    next.setMonth(next.getMonth() + 1);
+  } else if (frequency === "yearly") {
+    next.setFullYear(next.getFullYear() + 1);
+  }
+  return next;
+}
+
+// POST /api/transactions/quick-add - NLP Extraction via OpenRouter
+app.post("/api/transactions/quick-add", requireAuth, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || typeof text !== "string") {
+      return res.status(400).json({ error: "Text prompt is required" });
+    }
+
+    const todayStr = new Date().toISOString().split("T")[0];
+
+    const prompt = `
+You are an expert personal finance assistant.
+Extract transaction details from this unstructured text:
+"${text}"
+
+Reference date (Today): ${todayStr}
+
+Select exactly one category from this fixed list:
+- housing
+- groceries
+- utilities
+- entertainment
+- transportation
+- insurance
+- salary
+- freelance
+- investments
+- other
+
+Resolve relative dates (e.g. "yesterday", "today", "last Monday", "2 days ago") into actual "YYYY-MM-DD" format using the reference date. If no date is mentioned, default to today's date "${todayStr}".
+Infer the type: "income" or "expense" (e.g. "spent", "paid", "bought" implies expense; "got", "received", "earned", "salary" implies income).
+
+Your response must be a single raw JSON object with no markdown block formatting, no preamble, and no extra text.
+JSON structure:
+{
+  "amount": number (positive float),
+  "type": "income" or "expense",
+  "category": "one_of_the_categories_above",
+  "date": "YYYY-MM-DD",
+  "description": "short descriptive name"
+}
+`;
+
+    const result = await callOpenRouterWithFallback([
+      { role: "system", content: "You are a financial information extraction agent. You only output raw JSON objects." },
+      { role: "user", content: prompt }
+    ]);
+
+    let rawText = result.text.trim();
+    if (rawText.startsWith("```")) {
+      rawText = rawText.replace(/^```(json)?/, "").replace(/```$/, "").trim();
+    }
+
+    const parsedData = JSON.parse(rawText);
+
+    const validated = QuickAddSchema.safeParse({
+      ...parsedData,
+      amount: parsedData.amount ? parseFloat(parsedData.amount) : undefined
+    });
+
+    if (!validated.success) {
+      console.warn("Zod validation failed for quick-add extraction:", validated.error);
+      return res.status(422).json({ 
+        error: "Could not reliably extract transaction data. Please enter it manually.", 
+        details: validated.error.errors 
+      });
+    }
+
+    res.json(validated.data);
+  } catch (error) {
+    console.error("Quick Add Extraction Error:", error);
+    res.status(500).json({ error: "Failed to parse natural language transaction" });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// NOTIFICATIONS ENDPOINTS
+// ----------------------------------------------------------------------------
+
+// GET /api/notifications
+app.get("/api/notifications", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { data: list, error: listError } = await supabaseAdmin
+      .from("notifications")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (listError) throw listError;
+
+    const { count, error: countError } = await supabaseAdmin
+      .from("notifications")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("is_read", false);
+
+    if (countError) throw countError;
+
+    res.json({ notifications: list || [], unreadCount: count || 0 });
+  } catch (err) {
+    console.error("Fetch notifications error:", err);
+    res.status(500).json({ error: err.message || "Failed to fetch notifications" });
+  }
+});
+
+// PUT /api/notifications/:id/read
+app.put("/api/notifications/:id/read", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { data, error } = await supabaseAdmin
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("id", id)
+      .eq("user_id", userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error("Read notification error:", err);
+    res.status(500).json({ error: err.message || "Failed to update notification" });
+  }
+});
+
+// PUT /api/notifications/read-all
+app.put("/api/notifications/read-all", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { data, error } = await supabaseAdmin
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("user_id", userId)
+      .select();
+
+    if (error) throw error;
+    res.json({ success: true, count: data?.length || 0 });
+  } catch (err) {
+    console.error("Read all notifications error:", err);
+    res.status(500).json({ error: err.message || "Failed to mark notifications as read" });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// CSV BULK IMPORT ENDPOINT
 // ----------------------------------------------------------------------------
 app.post("/api/transactions/bulk-import", requireAuth, async (req, res) => {
   try {
@@ -422,7 +1024,6 @@ app.post("/api/transactions/bulk-import", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Bulk import limit exceeded. Max 1000 rows allowed." });
     }
 
-    // Map properties and format
     const rowsToInsert = transactions.map((tx) => ({
       user_id: userId,
       amount: parseFloat(tx.amount),
@@ -452,7 +1053,7 @@ app.post("/api/transactions/bulk-import", requireAuth, async (req, res) => {
 });
 
 // ----------------------------------------------------------------------------
-// PART C: AI AUTO-CATEGORIZATION ENDPOINT
+// AI AUTO-CATEGORIZATION ENDPOINT
 // ----------------------------------------------------------------------------
 const categoryCache = new Map();
 
@@ -473,13 +1074,11 @@ app.post("/api/transactions/categorize", requireAuth, aiRateLimiter, async (req,
       "other"
     ];
 
-    // Case 1: Bulk descriptions array
     if (Array.isArray(descriptions)) {
       if (descriptions.length === 0) {
         return res.json([]);
       }
 
-      // Check cache first
       const results = {};
       const misses = [];
 
@@ -493,9 +1092,7 @@ app.post("/api/transactions/categorize", requireAuth, aiRateLimiter, async (req,
         }
       });
 
-      // If we have misses, fetch them in a single batch prompt
       if (misses.length > 0) {
-        // Cap batch size at 50 to prevent prompt overflow
         const batch = misses.slice(0, 50);
 
         const prompt = `
@@ -539,7 +1136,6 @@ JSON structure:
             results[desc] = categoryResult;
           });
         } else {
-          // Fallback if parsing failed
           batch.forEach((desc) => {
             const categoryResult = { category: "other", confidence: 0.1 };
             results[desc] = categoryResult;
@@ -547,7 +1143,6 @@ JSON structure:
         }
       }
 
-      // Prepare final mapping in the order they were requested
       const finalPayload = descriptions.map((desc) => {
         return {
           description: desc,
@@ -558,14 +1153,12 @@ JSON structure:
       return res.json(finalPayload);
     }
 
-    // Case 2: Single description
     if (!description || typeof description !== "string") {
       return res.status(400).json({ error: "Transaction description or descriptions array is required" });
     }
 
     const normalizedDesc = description.trim().toLowerCase();
 
-    // Check session in-memory cache
     if (categoryCache.has(normalizedDesc)) {
       console.log(`[Cache Hit] Returning auto-category for description: ${normalizedDesc}`);
       return res.json(categoryCache.get(normalizedDesc));
@@ -602,7 +1195,6 @@ JSON structure:
       confidence: typeof parsedData.confidence === "number" ? parsedData.confidence : 0.5
     };
 
-    // Store in cache
     categoryCache.set(normalizedDesc, categoryResult);
 
     res.json(categoryResult);

@@ -8,6 +8,8 @@ const ThemeContext = createContext({
   mode: "light",
   setMode: () => {},
   toggleMode: () => {},
+  homeCurrency: "INR",
+  setHomeCurrency: () => {},
 });
 
 export function ThemeProvider({ children }) {
@@ -20,6 +22,9 @@ export function ThemeProvider({ children }) {
       localStorage.getItem("financeflow-mode") ||
       (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
     );
+  });
+  const [homeCurrency, setHomeCurrencyState] = useState(() => {
+    return localStorage.getItem("financeflow-home-currency") || "INR";
   });
 
   const debounceTimeoutRef = useRef(null);
@@ -39,6 +44,10 @@ export function ThemeProvider({ children }) {
     }
   }, [mode]);
 
+  useEffect(() => {
+    localStorage.setItem("financeflow-home-currency", homeCurrency);
+  }, [homeCurrency]);
+
   // Fetch settings from Supabase when user logs in
   useEffect(() => {
     if (!user) return;
@@ -47,26 +56,30 @@ export function ThemeProvider({ children }) {
       try {
         const { data, error } = await supabase
           .from("user_settings")
-          .select("theme_preference, mode_preference")
+          .select("theme_preference, mode_preference, home_currency")
           .eq("user_id", user.id)
           .maybeSingle();
 
         if (error) throw error;
 
         if (data) {
-          setThemeState(data.theme_preference);
-          setModeState(data.mode_preference);
+          setThemeState(data.theme_preference || "original");
+          setModeState(data.mode_preference || "light");
+          setHomeCurrencyState(data.home_currency || "INR");
         }
       } catch (err) {
         console.error("Failed to load user settings from database:", err);
       }
     };
 
-    fetchUserSettings();
+    const runSetup = async () => {
+      await fetchUserSettings();
+    };
+    runSetup();
   }, [user]);
 
   // Debounced save to Supabase
-  const savePreferencesToDb = (newTheme, newMode) => {
+  const savePreferencesToDb = (newTheme, newMode, newHomeCurrency) => {
     if (!user) return;
 
     if (debounceTimeoutRef.current) {
@@ -79,29 +92,35 @@ export function ThemeProvider({ children }) {
           user_id: user.id,
           theme_preference: newTheme,
           mode_preference: newMode,
+          home_currency: newHomeCurrency,
         });
 
         if (error) throw error;
       } catch (err) {
-        console.error("Failed to save theme preferences to Supabase:", err);
+        console.error("Failed to save preferences to Supabase:", err);
       }
     }, 800); // 800ms debounce
   };
 
   const setTheme = (newTheme) => {
     setThemeState(newTheme);
-    savePreferencesToDb(newTheme, mode);
+    savePreferencesToDb(newTheme, mode, homeCurrency);
   };
 
   const setMode = (newMode) => {
     setModeState(newMode);
-    savePreferencesToDb(theme, newMode);
+    savePreferencesToDb(theme, newMode, homeCurrency);
   };
 
   const toggleMode = () => {
     const nextMode = mode === "light" ? "dark" : "light";
     setModeState(nextMode);
-    savePreferencesToDb(theme, nextMode);
+    savePreferencesToDb(theme, nextMode, homeCurrency);
+  };
+
+  const setHomeCurrency = (newHomeCurrency) => {
+    setHomeCurrencyState(newHomeCurrency);
+    savePreferencesToDb(theme, mode, newHomeCurrency);
   };
 
   const value = {
@@ -110,6 +129,8 @@ export function ThemeProvider({ children }) {
     mode,
     setMode,
     toggleMode,
+    homeCurrency,
+    setHomeCurrency,
   };
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

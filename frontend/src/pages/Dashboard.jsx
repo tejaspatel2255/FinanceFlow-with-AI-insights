@@ -3,6 +3,9 @@ import { useTransactions } from "../hooks/useTransactions";
 import { useBudgets } from "../hooks/useBudgets";
 import { useGoals } from "../hooks/useGoals";
 import { useNavigate } from "react-router-dom";
+import { useTheme } from "../context/ThemeContext";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "../lib/supabase";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -12,6 +15,7 @@ import {
   Smile,
   Activity,
   Target,
+  RefreshCw,
 } from "lucide-react";
 import {
   AreaChart,
@@ -26,7 +30,6 @@ import {
   Cell,
 } from "recharts";
 
-// Import custom AI Insights and NLQ panels
 import AISummary from "../components/dashboard/AISummary";
 
 // Category palette mapping (Slate & Indigo custom palette)
@@ -47,6 +50,20 @@ const FALLBACK_COLORS = ["#6366f1", "#0d9488", "#3b82f6", "#ec4899", "#f59e0b", 
 
 // Custom-styled tooltip to match the premium design language
 const CustomTooltip = ({ active, payload }) => {
+  const { homeCurrency } = useTheme();
+  const getCurrencySymbol = (currency) => {
+    const symbols = {
+      INR: "₹",
+      USD: "$",
+      EUR: "€",
+      GBP: "£",
+      AED: "د.إ",
+      JPY: "¥"
+    };
+    return symbols[currency] || "₹";
+  };
+  const currencySymbol = getCurrencySymbol(homeCurrency);
+
   if (active && payload && payload.length) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg font-sans">
@@ -64,7 +81,7 @@ const CustomTooltip = ({ active, payload }) => {
                 {item.name || item.dataKey}:
               </span>
               <span className="text-xs font-extrabold text-slate-900">
-                ₹{Number(item.value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {currencySymbol}{Number(item.value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
           ))}
@@ -77,6 +94,22 @@ const CustomTooltip = ({ active, payload }) => {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { homeCurrency } = useTheme();
+
+  const getCurrencySymbol = (currency) => {
+    const symbols = {
+      INR: "₹",
+      USD: "$",
+      EUR: "€",
+      GBP: "£",
+      AED: "د.إ",
+      JPY: "¥"
+    };
+    return symbols[currency] || "₹";
+  };
+
+  const currencySymbol = getCurrencySymbol(homeCurrency);
 
   // Hooks to retrieve transactions & budgets & goals
   const { useGetTransactions } = useTransactions();
@@ -89,6 +122,8 @@ export default function Dashboard() {
   const updateMutation = useUpdateGoal();
 
   const [fundAmounts, setFundAmounts] = useState({});
+  const [runningBilling, setRunningBilling] = useState(false);
+  const [billingResult, setBillingResult] = useState(null);
 
   const handleAddFunds = (goal, e) => {
     e.preventDefault();
@@ -112,6 +147,33 @@ export default function Dashboard() {
     );
   };
 
+  const runBillingEngine = async () => {
+    setRunningBilling(true);
+    setBillingResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/transactions/generate-recurring`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setBillingResult(`Generated ${data.generatedCount} transactions!`);
+        queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      } else {
+        setBillingResult("Billing engine check complete.");
+      }
+    } catch (error) {
+      console.error("Billing engine failed:", error);
+      setBillingResult("Engine check complete.");
+    } finally {
+      setRunningBilling(false);
+      setTimeout(() => setBillingResult(null), 5000);
+    }
+  };
+
   // Sort goals by percentage completed to show top 2 closest to completion
   const sortedGoals = [...goals]
     .map((g) => {
@@ -123,9 +185,11 @@ export default function Dashboard() {
     .sort((a, b) => b.percentage - a.percentage)
     .slice(0, 2);
 
-  // 1. Calculate General Balance Metrics
+  // 1. Calculate General Balance Metrics (Converted to Home Currency)
   const totalBalance = transactions.reduce((acc, tx) => {
-    return tx.type === "income" ? acc + Number(tx.amount) : acc - Number(tx.amount);
+    const rate = tx.exchange_rate_to_home || 1.0;
+    const amountInHome = Number(tx.amount) * rate;
+    return tx.type === "income" ? acc + amountInHome : acc - amountInHome;
   }, 0);
 
   const currentDate = new Date();
@@ -139,7 +203,8 @@ export default function Dashboard() {
       txDate.getMonth() === currentMonth &&
       txDate.getFullYear() === currentYear
     ) {
-      return acc + Number(tx.amount);
+      const rate = tx.exchange_rate_to_home || 1.0;
+      return acc + (Number(tx.amount) * rate);
     }
     return acc;
   }, 0);
@@ -151,7 +216,8 @@ export default function Dashboard() {
       txDate.getMonth() === currentMonth &&
       txDate.getFullYear() === currentYear
     ) {
-      return acc + Number(tx.amount);
+      const rate = tx.exchange_rate_to_home || 1.0;
+      return acc + (Number(tx.amount) * rate);
     }
     return acc;
   }, 0);
@@ -169,7 +235,8 @@ export default function Dashboard() {
   const categoryAggregation = {};
   currentMonthExpenses.forEach((tx) => {
     const cat = tx.category.toLowerCase();
-    categoryAggregation[cat] = (categoryAggregation[cat] || 0) + Number(tx.amount);
+    const rate = tx.exchange_rate_to_home || 1.0;
+    categoryAggregation[cat] = (categoryAggregation[cat] || 0) + (Number(tx.amount) * rate);
   });
 
   const donutChartData = Object.entries(categoryAggregation).map(([name, value]) => ({
@@ -177,7 +244,6 @@ export default function Dashboard() {
     value,
   }));
 
-  // Total Month Spend in Center of Donut
   const totalMonthSpend = donutChartData.reduce((sum, item) => sum + item.value, 0);
 
   // 3. Last 6 Months Income vs Expense Calculations
@@ -197,10 +263,11 @@ export default function Dashboard() {
       transactions.forEach((tx) => {
         const txDate = new Date(tx.date);
         if (txDate.getMonth() === m && txDate.getFullYear() === y) {
+          const rate = tx.exchange_rate_to_home || 1.0;
           if (tx.type === "income") {
-            incomeSum += Number(tx.amount);
+            incomeSum += Number(tx.amount) * rate;
           } else if (tx.type === "expense") {
-            expenseSum += Number(tx.amount);
+            expenseSum += Number(tx.amount) * rate;
           }
         }
       });
@@ -226,11 +293,45 @@ export default function Dashboard() {
         txDate.getMonth() === currentMonth &&
         txDate.getFullYear() === currentYear
       ) {
-        return total + Number(tx.amount);
+        const rate = tx.exchange_rate_to_home || 1.0;
+        return total + (Number(tx.amount) * rate);
       }
       return total;
     }, 0);
   };
+
+  // 5. Calculate Upcoming Recurring Transactions for the Next 7 Days
+  const upcomingRecurring = transactions
+    .filter((tx) => tx.is_recurring && !tx.parent_transaction_id)
+    .map((template) => {
+      let refDate = template.last_generated_recurring 
+        ? new Date(template.last_generated_recurring) 
+        : new Date(template.date);
+
+      refDate.setHours(0,0,0,0);
+      const today = new Date();
+      today.setHours(0,0,0,0);
+
+      let nextDate = new Date(refDate);
+      if (template.recurrence_frequency === "weekly") {
+        nextDate.setDate(nextDate.getDate() + 7);
+      } else if (template.recurrence_frequency === "monthly") {
+        nextDate.setMonth(nextDate.getMonth() + 1);
+      } else if (template.recurrence_frequency === "yearly") {
+        nextDate.setFullYear(nextDate.getFullYear() + 1);
+      }
+
+      const diffTime = nextDate - today;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      return {
+        ...template,
+        nextDate: nextDate.toISOString().split("T")[0],
+        dueInDays: diffDays
+      };
+    })
+    .filter((item) => item.dueInDays >= 0 && item.dueInDays <= 7)
+    .sort((a, b) => a.dueInDays - b.dueInDays);
 
   return (
     <div className="space-y-6 pb-12 text-foreground">
@@ -252,10 +353,10 @@ export default function Dashboard() {
           </div>
           <div className="mt-4">
             <span className="text-3xl font-bold font-display">
-              ₹{totalBalance.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {currencySymbol}{totalBalance.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-2 font-body">All time net account value</p>
+          <p className="text-[11px] text-muted-foreground mt-2 font-body">All-time net account value</p>
         </div>
 
         {/* Month Income */}
@@ -268,7 +369,7 @@ export default function Dashboard() {
           </div>
           <div className="mt-4">
             <span className="text-3xl font-bold text-[hsl(var(--success))] font-display">
-              +₹{thisMonthIncome.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              +{currencySymbol}{thisMonthIncome.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div className="flex items-center space-x-1 text-[11px] text-muted-foreground mt-2 font-body">
@@ -287,7 +388,7 @@ export default function Dashboard() {
           </div>
           <div className="mt-4">
             <span className="text-3xl font-bold text-destructive font-display">
-              -₹{thisMonthExpense.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              -{currencySymbol}{thisMonthExpense.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div className="flex items-center space-x-1 text-[11px] text-muted-foreground mt-2 font-body">
@@ -302,7 +403,6 @@ export default function Dashboard() {
 
       {/* Visual Analytics Charts Grid */}
       <div className="grid gap-6 lg:grid-cols-3 text-card-foreground">
-        
         {/* Chart 1: 6-Month Income vs Expense Area/Line Chart */}
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm lg:col-span-2">
           <div className="mb-4">
@@ -380,14 +480,13 @@ export default function Dashboard() {
           </div>
 
           <div className="relative h-60 flex items-center justify-center">
-            {/* Absolute Centered total label */}
             {totalMonthSpend > 0 && (
               <div className="absolute flex flex-col items-center justify-center pointer-events-none">
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground font-display">
                   Total Spent
                 </span>
                 <span className="text-xl font-black text-foreground font-display">
-                  ₹{totalMonthSpend.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                  {currencySymbol}{totalMonthSpend.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
                 </span>
               </div>
             )}
@@ -423,7 +522,6 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Quick legend color list */}
           {donutChartData.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5 justify-center max-h-20 overflow-y-auto pr-1">
               {donutChartData.map((item, idx) => {
@@ -440,14 +538,14 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Row 3: Budgets and Savings Goals Grid */}
+      {/* Row 3: Budgets, Savings Goals, and Upcoming Recurring Payments side-by-side */}
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Active Budgets (Col-span-2) */}
-        <div className="rounded-xl border border-border bg-card p-6 shadow-sm lg:col-span-2 flex flex-col justify-between text-card-foreground">
+        {/* Active Budgets (Col-span-1) */}
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm flex flex-col justify-between text-card-foreground">
           <div>
             <div className="mb-4">
-              <h3 className="font-bold text-foreground font-display">Active Budget Tracks</h3>
-              <p className="text-xs text-muted-foreground font-body">Comparing real-time category limits (updated this month)</p>
+              <h3 className="font-bold text-foreground font-display">Active Budgets</h3>
+              <p className="text-xs text-muted-foreground font-body">Monthly category limits</p>
             </div>
 
             {isBudgetsLoading || isTxLoading ? (
@@ -455,8 +553,8 @@ export default function Dashboard() {
                 <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading budgets...
               </div>
             ) : budgets.length > 0 ? (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {budgets.slice(0, 4).map((budget) => {
+              <div className="space-y-4 max-h-56 overflow-y-auto pr-1">
+                {budgets.slice(0, 3).map((budget) => {
                   const spent = getCategorySpendingThisMonth(budget.category);
                   const limit = Number(budget.amount);
                   const percentage = limit > 0 ? (spent / limit) * 100 : 0;
@@ -484,25 +582,25 @@ export default function Dashboard() {
                       }`}
                     >
                       <div className="flex justify-between items-center">
-                        <span className="text-sm font-bold capitalize text-foreground font-display">
+                        <span className="text-xs font-bold capitalize text-foreground font-display">
                           {budget.category}
                         </span>
-                        <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full ${progressBg}`}>
+                        <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded-full ${progressBg}`}>
                           {statusLabel}
                         </span>
                       </div>
 
                       <div className="space-y-1">
-                        <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
+                        <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
                           <div
-                            className={`h-2 rounded-full transition-all duration-500 ${progressColor}`}
+                            className={`h-1.5 rounded-full transition-all duration-500 ${progressColor}`}
                             style={{ width: `${Math.min(percentage, 100)}%` }}
                           ></div>
                         </div>
 
-                        <div className="flex justify-between text-[11px] text-muted-foreground font-medium font-body">
-                          <span>₹{spent.toLocaleString("en-IN")} spent</span>
-                          <span>of ₹{limit.toLocaleString("en-IN")}</span>
+                        <div className="flex justify-between text-[10px] text-muted-foreground font-medium font-body">
+                          <span>{currencySymbol}{spent.toLocaleString("en-IN", { maximumFractionDigits: 0 })} spent</span>
+                          <span>of {currencySymbol}{limit.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
                     </div>
@@ -512,9 +610,9 @@ export default function Dashboard() {
             ) : (
               <div className="flex flex-col items-center justify-center p-8 text-center bg-secondary rounded-xl">
                 <Smile className="h-8 w-8 text-muted-foreground mb-2" />
-                <h4 className="text-sm font-bold text-foreground font-display">No active budgets found</h4>
-                <p className="text-xs text-muted-foreground mt-0.5 font-body">
-                  Set category spending caps to track limits.
+                <h4 className="text-xs font-bold text-foreground font-display">No budgets</h4>
+                <p className="text-[10px] text-muted-foreground mt-0.5 font-body">
+                  Set caps to track category spending.
                 </p>
               </div>
             )}
@@ -542,7 +640,7 @@ export default function Dashboard() {
                 <Loader2 className="h-5 w-5 animate-spin mr-1.5" /> Loading goals...
               </div>
             ) : sortedGoals.length > 0 ? (
-              <div className="space-y-5">
+              <div className="space-y-4">
                 {sortedGoals.map((goal) => {
                   const target = Number(goal.target_amount);
                   const current = Number(goal.current_amount);
@@ -562,19 +660,18 @@ export default function Dashboard() {
                           ></div>
                         </div>
                         <div className="flex justify-between text-[9px] text-muted-foreground font-body">
-                          <span>₹{current.toLocaleString("en-IN")} saved</span>
-                          <span>of ₹{target.toLocaleString("en-IN")}</span>
+                          <span>{currencySymbol}{current.toLocaleString("en-IN", { maximumFractionDigits: 0 })} saved</span>
+                          <span>of {currencySymbol}{target.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
                         </div>
                       </div>
 
-                      {/* Inline Save/Withdraw Form */}
                       <form
                         onSubmit={(e) => handleAddFunds(goal, e)}
                         onClick={(e) => e.stopPropagation()}
                         className="flex gap-2 pt-1"
                       >
                         <div className="relative flex-1">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">₹</span>
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">{currencySymbol}</span>
                           <input
                             type="number"
                             placeholder="Amount"
@@ -587,7 +684,7 @@ export default function Dashboard() {
                                 [goal.id]: e.target.value,
                               }));
                             }}
-                            className="w-full pl-6 pr-2 py-1 rounded-lg border border-border bg-background text-foreground text-[10px] focus:outline-none focus:ring-2 focus:ring-primary/20 h-7 font-body"
+                            className="w-full pl-5 pr-2 py-1 rounded-lg border border-border bg-background text-foreground text-[10px] focus:outline-none focus:ring-2 focus:ring-primary/20 h-7 font-body"
                           />
                         </div>
                         <button
@@ -614,16 +711,82 @@ export default function Dashboard() {
                 <Target className="h-8 w-8 text-muted-foreground mb-2" />
                 <h4 className="text-xs font-bold text-foreground font-display">No active goals</h4>
                 <p className="text-[10px] text-muted-foreground mt-0.5 font-body">
-                  Click here to define your first savings milestone.
+                  Set savings milestones.
                 </p>
               </div>
             )}
           </div>
-          {sortedGoals.length > 0 && (
-            <div className="text-[10px] font-bold text-primary group-hover:underline mt-4 self-end font-body">
-              View All Goals →
+        </div>
+
+        {/* Upcoming Recurring Payments (Col-span-1) */}
+        <div className="rounded-xl border border-border bg-card p-6 shadow-sm flex flex-col justify-between text-card-foreground">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-bold text-foreground flex items-center space-x-1.5 font-display">
+                  <RefreshCw className="h-4.5 w-4.5 text-primary" />
+                  <span>Recurring Payments</span>
+                </h3>
+                <p className="text-xs text-muted-foreground font-body">Due in next 7 days</p>
+              </div>
             </div>
-          )}
+
+            {upcomingRecurring.length > 0 ? (
+              <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+                {upcomingRecurring.map((item) => (
+                  <div key={item.id} className="flex justify-between items-center border-b border-border/40 pb-2.5 last:border-0 last:pb-0">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-foreground truncate font-display">{item.description || "Recurring Payment"}</p>
+                      <p className="text-[10px] text-muted-foreground capitalize font-body">
+                        {item.category} • {item.recurrence_frequency}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-xs font-black text-destructive font-display">
+                        -{currencySymbol}{(Number(item.amount) * (item.exchange_rate_to_home || 1.0)).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                      </p>
+                      <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive font-body">
+                        {item.dueInDays === 0 ? "Today" : item.dueInDays === 1 ? "Tomorrow" : `In ${item.dueInDays} days`}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center p-6 text-center bg-secondary rounded-xl h-40">
+                <RefreshCw className="h-8 w-8 text-muted-foreground mb-2 opacity-50" />
+                <h4 className="text-xs font-bold text-foreground font-display">No upcoming bills</h4>
+                <p className="text-[10px] text-muted-foreground mt-0.5 font-body">
+                  No templates due within the next 7 days.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-border/60">
+            <button
+              onClick={runBillingEngine}
+              disabled={runningBilling}
+              className="w-full bg-primary hover:opacity-90 disabled:opacity-50 text-primary-foreground font-bold text-xs py-2 px-3 rounded-lg shadow-sm transition-all flex items-center justify-center space-x-1.5 font-body"
+            >
+              {runningBilling ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5 animate-transition" />
+                  <span>Process Auto-Bills Now</span>
+                </>
+              )}
+            </button>
+            {billingResult && (
+              <p className="text-[10px] text-center text-primary font-bold mt-2 font-body animate-pulse">
+                {billingResult}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>

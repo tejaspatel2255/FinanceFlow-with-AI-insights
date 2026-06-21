@@ -3,7 +3,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useGoals } from "../hooks/useGoals";
-import { Target, Calendar, Plus, Trash2, Sparkles, Loader2, IndianRupee, AlertCircle } from "lucide-react";
+import { useTheme } from "../context/ThemeContext";
+import { Target, Calendar, Plus, Trash2, Loader2 } from "lucide-react";
 
 // Form validation schema with Zod
 const goalSchema = z.object({
@@ -17,8 +18,23 @@ const goalSchema = z.object({
   deadline: z.string().min(1, "Deadline date is required"),
 });
 
-
 export default function Goals() {
+  const { homeCurrency } = useTheme();
+
+  const getCurrencySymbol = (currency) => {
+    const symbols = {
+      INR: "₹",
+      USD: "$",
+      EUR: "€",
+      GBP: "£",
+      AED: "د.إ",
+      JPY: "¥"
+    };
+    return symbols[currency] || "₹";
+  };
+
+  const currencySymbol = getCurrencySymbol(homeCurrency);
+
   const { useGetGoals, useCreateGoal, useUpdateGoal, useDeleteGoal } = useGoals();
   const { data: goals = [], isLoading: isGoalsLoading } = useGetGoals();
 
@@ -129,7 +145,7 @@ export default function Goals() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase text-muted-foreground font-display">Target Amount (₹)</label>
+              <label className="block text-xs font-bold uppercase text-muted-foreground font-display">Target Amount ({currencySymbol})</label>
               <input
                 type="text"
                 placeholder="0.00"
@@ -221,11 +237,11 @@ export default function Goals() {
                       {/* Amounts Display */}
                       <div className="mt-4 flex items-baseline justify-between text-foreground">
                         <div>
-                          <span className="text-xl font-bold font-display">₹{current.toLocaleString("en-IN")}</span>
+                          <span className="text-xl font-bold font-display">{currencySymbol}{current.toLocaleString("en-IN")}</span>
                           <span className="text-xs text-muted-foreground font-body"> saved</span>
                         </div>
                         <span className="text-xs font-semibold text-muted-foreground font-body">
-                          of ₹{target.toLocaleString("en-IN")} target
+                          of {currencySymbol}{target.toLocaleString("en-IN")} target
                         </span>
                       </div>
 
@@ -241,14 +257,13 @@ export default function Goals() {
                       </div>
                     </div>
 
-
                     {/* Add Funds Inline Form */}
                     <form
                       onSubmit={(e) => handleAddFunds(goal, e)}
                       className="flex gap-2 pt-3 border-t border-border"
                     >
                       <div className="relative flex-1">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">₹</span>
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">{currencySymbol}</span>
                         <input
                           type="number"
                           placeholder="Amount"

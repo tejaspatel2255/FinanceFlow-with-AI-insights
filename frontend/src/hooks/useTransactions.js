@@ -32,20 +32,25 @@ export function useTransactions() {
     return useMutation({
       mutationFn: async (transaction) => {
         if (!user) throw new Error("User must be authenticated.");
-        const { data, error } = await supabase
-          .from("transactions")
-          .insert({
-            ...transaction,
-            user_id: user.id,
-          })
-          .select()
-          .single();
+        const { data: { session } } = await supabase.auth.getSession();
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/transactions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token || ""}`,
+          },
+          body: JSON.stringify(transaction),
+        });
 
-        if (error) throw error;
-        return data;
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to create transaction");
+        }
+        return response.json();
       },
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["transactions", user?.id] });
+        queryClient.invalidateQueries({ queryKey: ["notifications", user?.id] });
       },
     });
   };

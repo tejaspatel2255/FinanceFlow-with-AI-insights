@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useTransactions } from "../hooks/useTransactions";
+import { useTheme } from "../context/ThemeContext";
 import { supabase } from "../lib/supabase";
 import {
   Calendar,
@@ -33,6 +34,10 @@ const transactionSchema = z.object({
   category: z.string().min(1, "Category is required"),
   date: z.string().min(1, "Date is required"),
   description: z.string().optional(),
+  currency: z.string().default("INR"),
+  is_recurring: z.boolean().default(false),
+  recurrence_frequency: z.string().optional().nullable(),
+  recurrence_end_date: z.string().optional().nullable(),
 });
 
 const CATEGORIES = [
@@ -48,7 +53,25 @@ const CATEGORIES = [
   "other",
 ];
 
+const CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "JPY"];
+
 export default function Transactions() {
+  const { homeCurrency } = useTheme();
+
+  const getCurrencySymbol = (currency) => {
+    const symbols = {
+      INR: "₹",
+      USD: "$",
+      EUR: "€",
+      GBP: "£",
+      AED: "د.إ",
+      JPY: "¥"
+    };
+    return symbols[currency] || "₹";
+  };
+
+  const currencySymbol = getCurrencySymbol(homeCurrency);
+
   const {
     useGetTransactions,
     useCreateTransaction,
@@ -76,6 +99,15 @@ export default function Transactions() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
+  // Natural Language Quick-Add State
+  const [quickAddText, setQuickAddText] = useState("");
+  const [quickAdding, setQuickAdding] = useState(false);
+  const [quickAddError, setQuickAddError] = useState("");
+
+  // Live Exchange Rate Conversion helper states
+  const [exchangeRateHelper, setExchangeRateHelper] = useState(null);
+  const [editExchangeRateHelper, setEditExchangeRateHelper] = useState(null);
+
   // Forms Hook Setup
   const addForm = useForm({
     resolver: zodResolver(transactionSchema),
@@ -85,6 +117,10 @@ export default function Transactions() {
       category: "groceries",
       date: new Date().toISOString().split("T")[0],
       description: "",
+      currency: "INR",
+      is_recurring: false,
+      recurrence_frequency: "monthly",
+      recurrence_end_date: "",
     },
   });
 
@@ -94,6 +130,58 @@ export default function Transactions() {
 
   const watchedDescription = addForm.watch("description");
   const watchedCategory = addForm.watch("category");
+  const watchedIsRecurring = addForm.watch("is_recurring");
+  const watchedEditIsRecurring = editForm.watch("is_recurring");
+  const watchedCurrency = addForm.watch("currency");
+  const watchedEditCurrency = editForm.watch("currency");
+  const watchedAmount = addForm.watch("amount");
+  const watchedEditAmount = editForm.watch("amount");
+
+  // Fetch exchange rate preview in Add form
+  useEffect(() => {
+    if (!watchedCurrency || watchedCurrency === homeCurrency) {
+      setExchangeRateHelper(null);
+      return;
+    }
+    const fetchRate = async () => {
+      try {
+        const res = await fetch(`https://open.er-api.com/v6/latest/${watchedCurrency}`);
+        if (res.ok) {
+          const data = await res.json();
+          const rate = data.rates[homeCurrency];
+          if (rate) {
+            setExchangeRateHelper(rate);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch exchange helper rate:", err);
+      }
+    };
+    fetchRate();
+  }, [watchedCurrency, homeCurrency]);
+
+  // Fetch exchange rate preview in Edit form
+  useEffect(() => {
+    if (!watchedEditCurrency || watchedEditCurrency === homeCurrency) {
+      setEditExchangeRateHelper(null);
+      return;
+    }
+    const fetchRate = async () => {
+      try {
+        const res = await fetch(`https://open.er-api.com/v6/latest/${watchedEditCurrency}`);
+        if (res.ok) {
+          const data = await res.json();
+          const rate = data.rates[homeCurrency];
+          if (rate) {
+            setEditExchangeRateHelper(rate);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch exchange helper rate:", err);
+      }
+    };
+    fetchRate();
+  }, [watchedEditCurrency, homeCurrency]);
 
   // Debounced auto-categorization API call
   useEffect(() => {
@@ -148,6 +236,10 @@ export default function Transactions() {
         category: data.category,
         date: data.date,
         description: data.description || "",
+        currency: data.currency || "INR",
+        is_recurring: data.is_recurring || false,
+        recurrence_frequency: data.is_recurring ? data.recurrence_frequency : null,
+        recurrence_end_date: (data.is_recurring && data.recurrence_end_date) ? data.recurrence_end_date : null,
       },
       {
         onSuccess: () => {
@@ -168,6 +260,10 @@ export default function Transactions() {
         category: data.category,
         date: data.date,
         description: data.description || "",
+        currency: data.currency || "INR",
+        is_recurring: data.is_recurring || false,
+        recurrence_frequency: data.is_recurring ? data.recurrence_frequency : null,
+        recurrence_end_date: (data.is_recurring && data.recurrence_end_date) ? data.recurrence_end_date : null,
       },
       {
         onSuccess: () => {
@@ -186,12 +282,79 @@ export default function Transactions() {
       category: tx.category,
       date: tx.date,
       description: tx.description || "",
+      currency: tx.currency || "INR",
+      is_recurring: tx.is_recurring || false,
+      recurrence_frequency: tx.recurrence_frequency || "monthly",
+      recurrence_end_date: tx.recurrence_end_date || "",
     });
   };
 
   const handleDeleteClick = (id) => {
     if (window.confirm("Are you sure you want to delete this transaction?")) {
       deleteMutation.mutate(id);
+    }
+  };
+
+  const handleStopRecurring = (tx) => {
+    if (window.confirm("Stop generating new recurring instances for this transaction?")) {
+      updateMutation.mutate(
+        {
+          id: tx.id,
+          amount: Number(tx.amount),
+          type: tx.type,
+          category: tx.category,
+          date: tx.date,
+          description: tx.description || "",
+          is_recurring: false,
+        },
+        {
+          onSuccess: () => {
+            alert("Recurring schedule stopped successfully.");
+          }
+        }
+      );
+    }
+  };
+
+  const handleQuickAddSubmit = async (e) => {
+    e.preventDefault();
+    if (!quickAddText.trim()) return;
+
+    setQuickAdding(true);
+    setQuickAddError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/transactions/quick-add`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
+        body: JSON.stringify({ text: quickAddText }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Prefill form
+        addForm.setValue("amount", data.amount ? data.amount.toString() : "");
+        addForm.setValue("type", data.type || "expense");
+        addForm.setValue("category", data.category || "other");
+        addForm.setValue("date", data.date || new Date().toISOString().split("T")[0]);
+        addForm.setValue("description", data.description || "");
+        addForm.setValue("currency", data.currency || "INR");
+        addForm.setValue("is_recurring", false);
+        
+        setIsAddOpen(true);
+        setQuickAddText("");
+      } else {
+        const err = await response.json().catch(() => ({}));
+        setQuickAddError(err.error || "AI could not parse with high confidence. Please use manual form.");
+      }
+    } catch (err) {
+      console.error("Quick add failed:", err);
+      setQuickAddError("Failed to connect to NLP parsing service.");
+    } finally {
+      setQuickAdding(false);
     }
   };
 
@@ -220,24 +383,25 @@ export default function Transactions() {
     setEndDate("");
   };
 
-  // Phase 3: Export Branded PDF Report (uses INR to avoid character encoding errors with raw unicode ₹)
+  // Export PDF Statement Report
   const exportBrandedPDF = () => {
     const doc = new jsPDF();
     const currentMonthName = new Date().toLocaleString("default", { month: "long" }) + " " + new Date().getFullYear();
 
-    const incomeTotal = filteredTransactions.reduce((acc, tx) => tx.type === "income" ? acc + Number(tx.amount) : acc, 0);
-    const expenseTotal = filteredTransactions.reduce((acc, tx) => tx.type === "expense" ? acc + Number(tx.amount) : acc, 0);
+    const incomeTotal = filteredTransactions.reduce((acc, tx) => tx.type === "income" ? acc + (Number(tx.amount) * (tx.exchange_rate_to_home || 1.0)) : acc, 0);
+    const expenseTotal = filteredTransactions.reduce((acc, tx) => tx.type === "expense" ? acc + (Number(tx.amount) * (tx.exchange_rate_to_home || 1.0)) : acc, 0);
     const netValue = incomeTotal - expenseTotal;
 
     const catBreakdown = {};
     filteredTransactions.forEach((tx) => {
       if (tx.type === "expense") {
-        catBreakdown[tx.category] = (catBreakdown[tx.category] || 0) + Number(tx.amount);
+        const amt = Number(tx.amount) * (tx.exchange_rate_to_home || 1.0);
+        catBreakdown[tx.category] = (catBreakdown[tx.category] || 0) + amt;
       }
     });
 
     const topTransactions = [...filteredTransactions]
-      .sort((a, b) => Number(b.amount) - Number(a.amount))
+      .sort((a, b) => (Number(b.amount) * (b.exchange_rate_to_home || 1.0)) - (Number(a.amount) * (a.exchange_rate_to_home || 1.0)))
       .slice(0, 5);
 
     const primaryColor = [79, 70, 229]; // Indigo-600
@@ -262,7 +426,7 @@ export default function Transactions() {
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...slateMuted);
-    doc.text("PERSONAL FINANCE DATA STATEMENT (INR)", 20, 30);
+    doc.text(`PERSONAL FINANCE DATA STATEMENT (${homeCurrency})`, 20, 30);
 
     doc.setFont("helvetica", "normal");
     doc.text(`Reporting Period: ${currentMonthName}`, 20, 36);
@@ -279,7 +443,7 @@ export default function Transactions() {
     doc.setTextColor(5, 150, 105); 
     doc.text("TOTAL INCOME", 26, 55);
     doc.setFontSize(11);
-    doc.text(`+INR ${incomeTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, 26, 64);
+    doc.text(`+${homeCurrency} ${incomeTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, 26, 64);
 
     // 2. Expense Card
     doc.setFillColor(254, 242, 242); 
@@ -289,7 +453,7 @@ export default function Transactions() {
     doc.setTextColor(220, 38, 38); 
     doc.text("TOTAL EXPENSES", 85, 55);
     doc.setFontSize(11);
-    doc.text(`-INR ${expenseTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, 85, 64);
+    doc.text(`-${homeCurrency} ${expenseTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, 85, 64);
 
     // 3. Net Balance Card
     doc.setFillColor(243, 244, 246); 
@@ -300,7 +464,7 @@ export default function Transactions() {
     doc.text("NET ACCOUNT VALUE", 144, 55);
     doc.setFontSize(11);
     const sign = netValue >= 0 ? "+" : "";
-    doc.text(`${sign}INR ${netValue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, 144, 64);
+    doc.text(`${sign}${homeCurrency} ${netValue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, 144, 64);
 
     doc.setDrawColor(...lineLight);
     doc.line(20, 80, 190, 80);
@@ -315,7 +479,7 @@ export default function Transactions() {
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...slateMuted);
     doc.text("Category Name", 22, yPosition);
-    doc.text("Total Expended (INR)", 150, yPosition);
+    doc.text(`Total Expended (${homeCurrency})`, 150, yPosition);
     doc.line(20, yPosition + 2, 190, yPosition + 2);
 
     yPosition += 8;
@@ -326,7 +490,7 @@ export default function Transactions() {
     if (breakdownEntries.length > 0) {
       breakdownEntries.forEach(([category, amount]) => {
         doc.text(category.charAt(0).toUpperCase() + category.slice(1), 22, yPosition);
-        doc.text(`INR ${amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, 150, yPosition);
+        doc.text(`${homeCurrency} ${amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, 150, yPosition);
         doc.setDrawColor(241, 245, 249);
         doc.line(20, yPosition + 2, 190, yPosition + 2);
         yPosition += 8;
@@ -350,7 +514,7 @@ export default function Transactions() {
     doc.text("Date", 22, yPosition);
     doc.text("Description", 55, yPosition);
     doc.text("Type", 115, yPosition);
-    doc.text("Amount (INR)", 160, yPosition);
+    doc.text(`Amount (${homeCurrency})`, 160, yPosition);
     doc.setDrawColor(...slateMuted);
     doc.line(20, yPosition + 2, 190, yPosition + 2);
 
@@ -364,7 +528,8 @@ export default function Transactions() {
         doc.text(tx.description || "N/A", 55, yPosition);
         doc.text(tx.type.toUpperCase(), 115, yPosition);
         const symbol = tx.type === "income" ? "+" : "-";
-        doc.text(`${symbol}INR ${Number(tx.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, 160, yPosition);
+        const totalHome = Number(tx.amount) * (tx.exchange_rate_to_home || 1.0);
+        doc.text(`${symbol}${homeCurrency} ${totalHome.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`, 160, yPosition);
         doc.setDrawColor(241, 245, 249);
         doc.line(20, yPosition + 2, 190, yPosition + 2);
         yPosition += 8;
@@ -417,6 +582,34 @@ export default function Transactions() {
             <span>Add Transaction</span>
           </button>
         </div>
+      </div>
+
+      {/* QUICK ADD NATURAL LANGUAGE INPUT PANEL */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-5 shadow-sm space-y-3">
+        <div className="flex items-center space-x-1.5 text-sm font-bold text-primary">
+          <Sparkles className="h-4 w-4 text-primary animate-pulse" />
+          <span>AI Quick Add (Natural Language)</span>
+        </div>
+        <form onSubmit={handleQuickAddSubmit} className="flex gap-2">
+          <input
+            type="text"
+            placeholder="e.g. 'spent 500 on groceries yesterday' or 'salary 1500 USD today'"
+            value={quickAddText}
+            onChange={(e) => setQuickAddText(e.target.value)}
+            className="flex-1 rounded-lg border border-border bg-background px-3.5 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 font-body"
+          />
+          <button
+            type="submit"
+            disabled={quickAdding}
+            className="bg-primary hover:opacity-90 disabled:opacity-50 text-primary-foreground font-bold px-4 py-2 rounded-lg text-xs transition-all flex items-center space-x-1.5 shrink-0"
+          >
+            {quickAdding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            <span>Parse Entry</span>
+          </button>
+        </form>
+        {quickAddError && (
+          <p className="text-xs text-destructive font-bold animate-pulse">{quickAddError}</p>
+        )}
       </div>
 
       {/* FILTER CONTROL PANEL */}
@@ -523,14 +716,28 @@ export default function Transactions() {
                   <th className="px-6 py-4 text-center">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody className="divide-y divide-border text-foreground/90">
                 {filteredTransactions.map((tx) => (
                   <tr key={tx.id} className="hover:bg-secondary/20 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap text-foreground font-medium">
                       {tx.date}
                     </td>
                     <td className="px-6 py-4 text-foreground/90">
-                      {tx.description || <span className="text-muted-foreground/60 italic">None</span>}
+                      <div className="flex items-center space-x-2">
+                        <span>{tx.description || <span className="text-muted-foreground/60 italic">None</span>}</span>
+                        {tx.is_recurring && !tx.parent_transaction_id && (
+                          <span className="inline-flex items-center space-x-1 rounded-full bg-primary/10 border border-primary/20 px-2 py-0.5 text-[9px] font-bold text-primary">
+                            <RefreshCw className="h-2.5 w-2.5" />
+                            <span>Template</span>
+                          </span>
+                        )}
+                        {tx.parent_transaction_id && (
+                          <span className="inline-flex items-center space-x-1 rounded-full bg-secondary border border-border px-2 py-0.5 text-[9px] font-bold text-muted-foreground">
+                            <RefreshCw className="h-2.5 w-2.5" />
+                            <span>Instance</span>
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="capitalize px-2 py-1 rounded bg-secondary text-foreground text-xs font-semibold">
@@ -553,18 +760,40 @@ export default function Transactions() {
                         tx.type === "income" ? "text-success" : "text-destructive"
                       }`}
                     >
-                      {tx.type === "income" ? "+" : "-"}₹{Number(tx.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      <div>
+                        <span>
+                          {tx.type === "income" ? "+" : "-"}
+                          {getCurrencySymbol(tx.currency)}
+                          {Number(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                        {tx.currency !== homeCurrency && (
+                          <div className="text-[10px] text-muted-foreground font-medium mt-0.5">
+                            ({currencySymbol}{(Number(tx.amount) * (tx.exchange_rate_to_home || 1.0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center space-x-2">
                       <button
                         onClick={() => handleEditClick(tx)}
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-primary hover:bg-secondary transition-all"
+                        title="Edit Transaction"
                       >
                         <Edit2 className="h-3.5 w-3.5" />
                       </button>
+                      {tx.is_recurring && !tx.parent_transaction_id && (
+                        <button
+                          onClick={() => handleStopRecurring(tx)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-warning hover:bg-secondary transition-all"
+                          title="Stop Recurrence"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleDeleteClick(tx.id)}
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-destructive hover:bg-secondary transition-all"
+                        title="Delete Transaction"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -601,63 +830,82 @@ export default function Transactions() {
             <h3 className="text-lg font-bold text-foreground mb-4 font-display">Add Transaction</h3>
 
             <form onSubmit={addForm.handleSubmit(onAddSubmit)} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase text-muted-foreground">Amount (₹)</label>
-                <input
-                  type="text"
-                  placeholder="0.00"
-                  {...addForm.register("amount")}
-                  className={`mt-1.5 block w-full rounded-lg border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
-                    addForm.formState.errors.amount
-                      ? "border-destructive focus:border-destructive focus:ring-destructive/20"
-                      : "border-border focus:border-primary focus:ring-primary/20"
-                  }`}
-                />
-                {addForm.formState.errors.amount && (
-                  <p className="mt-1 text-xs text-destructive">
-                    {addForm.formState.errors.amount.message}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase text-muted-foreground">Type</label>
-                <select
-                  {...addForm.register("type")}
-                  className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                >
-                  <option value="expense">Expense</option>
-                  <option value="income">Income</option>
-                </select>
-              </div>
-
-              <div>
-                <div className="flex items-center">
-                  <label className="block text-xs font-bold uppercase text-muted-foreground">Category</label>
-                  {aiSuggestion && (
-                    <span className="inline-flex items-center space-x-0.5 ml-2 rounded-full bg-primary/10 border border-primary/20 px-1.5 py-0.5 text-[9px] font-bold text-primary animate-fade-in shrink-0">
-                      <Sparkles className="h-2.5 w-2.5 text-primary animate-pulse" />
-                      <span>
-                        {aiSuggestion.confidence > 0.6
-                           ? "✨ AI suggested"
-                           : "Verify Category"}
-                      </span>
-                    </span>
-                  )}
-                  {aiCategorizing && (
-                    <span className="text-[9px] text-muted-foreground ml-2 animate-pulse">Analyzing...</span>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold uppercase text-muted-foreground">Amount</label>
+                  <input
+                    type="text"
+                    placeholder="0.00"
+                    {...addForm.register("amount")}
+                    className={`mt-1.5 block w-full rounded-lg border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                      addForm.formState.errors.amount
+                        ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                        : "border-border focus:border-primary focus:ring-primary/20"
+                    }`}
+                  />
+                  {addForm.formState.errors.amount && (
+                    <p className="mt-1 text-xs text-destructive">
+                      {addForm.formState.errors.amount.message}
+                    </p>
                   )}
                 </div>
-                <select
-                  {...addForm.register("category")}
-                  className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 capitalize"
-                >
-                  {CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted-foreground">Currency</label>
+                  <select
+                    {...addForm.register("currency")}
+                    className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Live exchange preview helper note */}
+              {exchangeRateHelper && watchedAmount && !isNaN(Number(watchedAmount)) && (
+                <p className="text-xs text-primary font-bold bg-primary/5 rounded-lg p-2 border border-primary/10">
+                  Estimated Conversion: {getCurrencySymbol(watchedCurrency)}{Number(watchedAmount).toLocaleString()} = {currencySymbol}{(Number(watchedAmount) * exchangeRateHelper).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {homeCurrency}
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted-foreground">Type</label>
+                  <select
+                    {...addForm.register("type")}
+                    className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div className="flex items-center">
+                    <label className="block text-xs font-bold uppercase text-muted-foreground">Category</label>
+                    {aiSuggestion && (
+                      <span className="inline-flex items-center space-x-0.5 ml-2 rounded-full bg-primary/10 border border-primary/20 px-1.5 py-0.5 text-[9px] font-bold text-primary animate-fade-in shrink-0">
+                        <Sparkles className="h-2.5 w-2.5 text-primary animate-pulse" />
+                        <span>AI suggested</span>
+                      </span>
+                    )}
+                    {aiCategorizing && (
+                      <span className="text-[9px] text-muted-foreground ml-2 animate-pulse">Analyzing...</span>
+                    )}
+                  </div>
+                  <select
+                    {...addForm.register("category")}
+                    className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 capitalize"
+                  >
+                    {CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -677,6 +925,45 @@ export default function Transactions() {
                   {...addForm.register("description")}
                   className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
+              </div>
+
+              {/* Recurring Switch and Settings */}
+              <div className="space-y-3 pt-2 border-t border-border/60">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="is_recurring"
+                    {...addForm.register("is_recurring")}
+                    className="rounded border-border bg-background text-primary focus:ring-primary/20 h-4 w-4 cursor-pointer"
+                  />
+                  <label htmlFor="is_recurring" className="text-xs font-bold uppercase text-muted-foreground select-none cursor-pointer">
+                    Enable Recurring Payments Schedule?
+                  </label>
+                </div>
+
+                {watchedIsRecurring && (
+                  <div className="grid grid-cols-2 gap-3 pl-6 border-l-2 border-primary/20 animate-fade-in">
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-muted-foreground">Billing Interval</label>
+                      <select
+                        {...addForm.register("recurrence_frequency")}
+                        className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-muted-foreground">End Date (Optional)</label>
+                      <input
+                        type="date"
+                        {...addForm.register("recurrence_end_date")}
+                        className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="pt-2 flex justify-end space-x-3">
@@ -714,48 +1001,71 @@ export default function Transactions() {
             <h3 className="text-lg font-bold text-foreground mb-4 font-display">Edit Transaction</h3>
 
             <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase text-muted-foreground">Amount (₹)</label>
-                <input
-                  type="text"
-                  placeholder="0.00"
-                  {...editForm.register("amount")}
-                  className={`mt-1.5 block w-full rounded-lg border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
-                    editForm.formState.errors.amount
-                      ? "border-destructive focus:border-destructive focus:ring-destructive/20"
-                      : "border-border focus:border-primary focus:ring-primary/20"
-                  }`}
-                />
-                {editForm.formState.errors.amount && (
-                  <p className="mt-1 text-xs text-destructive">
-                    {editForm.formState.errors.amount.message}
-                  </p>
-                )}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold uppercase text-muted-foreground">Amount</label>
+                  <input
+                    type="text"
+                    placeholder="0.00"
+                    {...editForm.register("amount")}
+                    className={`mt-1.5 block w-full rounded-lg border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                      editForm.formState.errors.amount
+                        ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                        : "border-border focus:border-primary focus:ring-primary/20"
+                    }`}
+                  />
+                  {editForm.formState.errors.amount && (
+                    <p className="mt-1 text-xs text-destructive">
+                      {editForm.formState.errors.amount.message}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted-foreground">Currency</label>
+                  <select
+                    {...editForm.register("currency")}
+                    className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase text-muted-foreground">Type</label>
-                <select
-                  {...editForm.register("type")}
-                  className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                >
-                  <option value="expense">Expense</option>
-                  <option value="income">Income</option>
-                </select>
-              </div>
+              {/* Live exchange preview helper note */}
+              {editExchangeRateHelper && watchedEditAmount && !isNaN(Number(watchedEditAmount)) && (
+                <p className="text-xs text-primary font-bold bg-primary/5 rounded-lg p-2 border border-primary/10">
+                  Estimated Conversion: {getCurrencySymbol(watchedEditCurrency)}{Number(watchedEditAmount).toLocaleString()} = {currencySymbol}{(Number(watchedEditAmount) * editExchangeRateHelper).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {homeCurrency}
+                </p>
+              )}
 
-              <div>
-                <label className="block text-xs font-bold uppercase text-muted-foreground">Category</label>
-                <select
-                  {...editForm.register("category")}
-                  className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 capitalize"
-                >
-                  {CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted-foreground">Type</label>
+                  <select
+                    {...editForm.register("type")}
+                    className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-muted-foreground">Category</label>
+                  <select
+                    {...editForm.register("category")}
+                    className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 capitalize"
+                  >
+                    {CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -775,6 +1085,45 @@ export default function Transactions() {
                   {...editForm.register("description")}
                   className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
+              </div>
+
+              {/* Recurring Switch and Settings */}
+              <div className="space-y-3 pt-2 border-t border-border/60">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="edit_is_recurring"
+                    {...editForm.register("is_recurring")}
+                    className="rounded border-border bg-background text-primary focus:ring-primary/20 h-4 w-4 cursor-pointer"
+                  />
+                  <label htmlFor="edit_is_recurring" className="text-xs font-bold uppercase text-muted-foreground select-none cursor-pointer">
+                    Enable Recurring Payments Schedule?
+                  </label>
+                </div>
+
+                {watchedEditIsRecurring && (
+                  <div className="grid grid-cols-2 gap-3 pl-6 border-l-2 border-primary/20 animate-fade-in">
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-muted-foreground">Billing Interval</label>
+                      <select
+                        {...editForm.register("recurrence_frequency")}
+                        className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-muted-foreground">End Date (Optional)</label>
+                      <input
+                        type="date"
+                        {...editForm.register("recurrence_end_date")}
+                        className="mt-1.5 block w-full rounded-lg border border-border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="pt-2 flex justify-end space-x-3">
