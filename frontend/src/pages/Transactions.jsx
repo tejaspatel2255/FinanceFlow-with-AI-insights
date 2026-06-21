@@ -101,23 +101,48 @@ const getRecurrenceFrequencyText = (template) => {
 
 const getRecurringPreviewText = (freq, days, startDate) => {
   if (!startDate) return "";
-  const formattedDate = new Date(startDate).toLocaleDateString(undefined, {
+  const start = new Date(startDate);
+  // Normalize date to local midnight for consistent calculations
+  start.setHours(0, 0, 0, 0);
+
+  const formattedStartDate = start.toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'long',
     day: 'numeric'
   });
+
+  let nextDate = new Date(start);
   if (freq === "weekly") {
-    return `This will repeat every week starting ${formattedDate}`;
+    nextDate.setDate(nextDate.getDate() + 7);
+  } else if (freq === "monthly") {
+    nextDate.setMonth(nextDate.getMonth() + 1);
+  } else if (freq === "yearly") {
+    nextDate.setFullYear(nextDate.getFullYear() + 1);
+  } else if (freq === "custom") {
+    const intervalDays = Number(days) || 28;
+    nextDate.setDate(nextDate.getDate() + intervalDays);
+  } else {
+    return "";
+  }
+
+  const formattedNextDate = nextDate.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  if (freq === "weekly") {
+    return `This will repeat every week starting ${formattedStartDate} (Next due: ${formattedNextDate})`;
   }
   if (freq === "monthly") {
-    return `This will repeat every month starting ${formattedDate}`;
+    return `This will repeat every month starting ${formattedStartDate} (Next due: ${formattedNextDate})`;
   }
   if (freq === "yearly") {
-    return `This will repeat every year starting ${formattedDate}`;
+    return `This will repeat every year starting ${formattedStartDate} (Next due: ${formattedNextDate})`;
   }
   if (freq === "custom") {
-    const intervalDays = days || 28;
-    return `This will repeat every ${intervalDays} days starting ${formattedDate}`;
+    const intervalDays = Number(days) || 28;
+    return `This will repeat every ${intervalDays} days starting ${formattedStartDate} (Next due: ${formattedNextDate})`;
   }
   return "";
 };
