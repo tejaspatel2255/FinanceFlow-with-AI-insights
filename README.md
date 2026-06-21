@@ -7,6 +7,9 @@ FinanceFlow is a state-of-the-art personal finance tracker built with a Node.js 
 ## ✨ Key Features
 
 *   **🎨 Multi-Theme Appearance System**: Choose from 5 premium color themes ("Original", "Midnight Ledger", "Sage Paper", "Terminal", "Coral Bloom") and a unified Light/Dark mode toggle. Settings persist instantly across devices through Supabase synchronization and local storage fallback, loaded via an anti-flash inline script.
+*   **🔄 Custom Recurring Schedules**: Supports standard billing intervals (Weekly, Monthly, Yearly) along with a "Custom (days)" option allowing users to specify any repeat interval (e.g., 28, 45, 90 days). The billing engine automatically calculates the next due date and displays the countdown inside the upcoming payments tracker.
+*   **⚡ AI Quick Add (Natural Language)**: Parse complex natural language inputs describing multiple transactions in a single sentence (e.g., *"spent 500 on icecream and earned 1000 by making a project"*) to automatically record expenses and income concurrently with precise categorization and error diagnostics.
+*   **📅 Chronological Default Sorting**: Transactions lists default to ordering by `date DESC, created_at DESC` ensuring predictable, chronological sorting and reliable tie-breaking for multiple entries on the same day.
 *   **🎯 Savings Goals Tracker**: Set financial targets with specific deadlines. View interactive progress tracking, save funds directly to individual goals, and get real-time AI-engine forecasts showing if you are on track or behind.
 *   **📥 CSV Bulk Importer**: Import your statements in bulk with drag-and-drop. Auto-detect columns, validate transaction values against Zod schema rules, and review parsing logs before batch-submitting.
 *   **✨ AI Auto-Categorization**: Automatically classify new transaction entries based on descriptions using Gemini. It includes an in-memory session cache to optimize API requests and handles bulk classification during CSV imports.
@@ -18,8 +21,8 @@ FinanceFlow is a state-of-the-art personal finance tracker built with a Node.js 
     4.  `qwen/qwen-2.5-72b-instruct:free` (Quaternary)
     5.  `openrouter/free` (Auto-routing)
 *   **💬 Natural Language Query (NLQ) Hero**: Search and ask questions about your cash flow in plain English (e.g., *"How much did I spend on groceries this month?"*). Responses feature custom typewriter reveal animations.
-*   **📑 Branded Statement Exports**: Download PDF balance sheets containing aggregated monthly totals, category breakdowns, and top transaction tables.
-*   **⚡ 24-Hour Insight Caching**: Financial pattern audits are cached inside Supabase for 24 hours, eliminating duplicate API costs and ensuring instant load times.
+*   **📑 Branded Statement Exports**: Download PDF balance sheets containing aggregated monthly totals, category breakdowns, and top transaction tables in your selected home currency.
+*   **⚡ Smart AI Insights Caching**: Financial pattern audits are cached inside Supabase for 24 hours. The cache tracks and validates the user's home currency, automatically invalidating when the active currency changes (e.g., INR to USD) to guarantee correct symbol rendering, and supports a manual cache bypass / force refresh parameter.
 *   **📱 Mobile-First Layout**: Adaptive UI utilizing collapsible sidebars on desktop and a sticky bottom navigation bar on mobile viewports.
 
 ---
