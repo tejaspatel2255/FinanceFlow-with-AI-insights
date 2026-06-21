@@ -242,13 +242,22 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// ----------------------------------------------------------------------------
-// POST /api/insights - AI Insights Generation (Cached + Rate Limited)
-// ----------------------------------------------------------------------------
+// Reusable safety net to replace stray "$" followed by digits with the correct symbol
+function sanitizeCurrencySymbols(text, correctSymbol) {
+  if (!text) return "";
+  if (correctSymbol === "$") return text;
+  // Match stray "$" immediately followed by a digit (lookahead)
+  return text.replace(/\$(?=\d)/g, correctSymbol);
+}
+
 app.post("/api/insights", requireAuth, aiRateLimiter, async (req, res) => {
   try {
     const userId = req.user.id;
     const { transactions = [] } = req.body;
+
+    // Fetch user home currency using the helper function first
+    const homeCurrency = await getUserHomeCurrency(userId);
+    const currencySymbol = getCurrencySymbol(homeCurrency);
 
     const { data: latestInsight, error: selectError } = await supabaseAdmin
       .from("ai_insights")
@@ -265,8 +274,13 @@ app.post("/api/insights", requireAuth, aiRateLimiter, async (req, res) => {
     const now = Date.now();
     const twentyFourHours = 24 * 60 * 60 * 1000;
 
-    if (latestInsight && (now - new Date(latestInsight.created_at).getTime()) < twentyFourHours) {
-      console.log(`[Cache Hit] Serving cached insight for user: ${userId}`);
+    // Cache is only valid if less than 24 hours old AND its stored currency matches the user's current home_currency
+    const cacheIsValid = latestInsight && 
+      latestInsight.currency === homeCurrency && 
+      (now - new Date(latestInsight.created_at).getTime()) < twentyFourHours;
+
+    if (cacheIsValid) {
+      console.log(`[Cache Hit] Serving cached insight for user: ${userId} (${homeCurrency})`);
       try {
         const cachedPayload = JSON.parse(latestInsight.insight_text);
         return res.status(200).json({
@@ -275,6 +289,7 @@ app.post("/api/insights", requireAuth, aiRateLimiter, async (req, res) => {
             id: latestInsight.id,
             user_id: latestInsight.user_id,
             created_at: latestInsight.created_at,
+            currency: latestInsight.currency,
             ...cachedPayload
           }
         });
@@ -282,10 +297,6 @@ app.post("/api/insights", requireAuth, aiRateLimiter, async (req, res) => {
         console.warn("Failed to parse cached insight JSON. Regenerating insights.");
       }
     }
-
-    // Fetch user home currency using the helper function
-    const homeCurrency = await getUserHomeCurrency(userId);
-    const currencySymbol = getCurrencySymbol(homeCurrency);
 
     const { data: budgets = [] } = await supabaseAdmin
       .from("budgets")
@@ -305,6 +316,9 @@ app.post("/api/insights", requireAuth, aiRateLimiter, async (req, res) => {
 
     const prompt = `
 You are a professional financial assistant. 
+
+CRITICAL: Every monetary amount you write MUST use the symbol '${currencySymbol}' and currency code '${homeCurrency}'. NEVER use the $ symbol unless the currency is specifically USD.
+
 Analyze the user's recent transactions and active budgets:
 
 REPORTS / DATA:
@@ -315,9 +329,6 @@ ${txSummary || "None logged"}
 ACTIVE BUDGETS:
 ${budgetSummary || "None set"}
 ---
-
-IMPORTANT CURRENCY INSTRUCTION:
-All monetary amounts in your response MUST be written using the currency symbol ${currencySymbol} (currency code: ${homeCurrency}). Do NOT use $ or any other symbol unless ${homeCurrency} is actually USD. Format amounts naturally for that currency (e.g. ${currencySymbol}1,000, and use local numbering/formatting conventions where relevant).
 
 Analyze this and output a JSON object. You MUST respond with ONLY a valid raw JSON object. 
 Do not wrap it in markdown code blocks like \`\`\`json. Do not include preambles.
@@ -335,6 +346,8 @@ JSON Format:
   "forecast": "your sentence here in ${currencySymbol}",
   "anomaly": "your sentence here in ${currencySymbol}"
 }
+
+CRITICAL: Every monetary amount you write MUST use the symbol '${currencySymbol}' and currency code '${homeCurrency}'. NEVER use the $ symbol unless the currency is specifically USD.
 `;
 
     const result = await callOpenRouterWithFallback([
@@ -346,6 +359,9 @@ JSON Format:
     if (rawText.startsWith("```")) {
       rawText = rawText.replace(/^```(json)?/, "").replace(/```$/, "").trim();
     }
+
+    // Apply the safety net directly to the raw text BEFORE parsing it as JSON
+    rawText = sanitizeCurrencySymbols(rawText, currencySymbol);
 
     let parsedData = {};
     try {
@@ -364,18 +380,11 @@ JSON Format:
       }
     }
 
-    // Safety net post-process: Replace stray "$" followed by digits with the correct symbol
-    const sanitizeStrayDollars = (text, targetSymbol) => {
-      if (!text) return "";
-      if (targetSymbol === "$") return text;
-      return text.replace(/\$\s?(\d+([.,]\d+)*)/g, `${targetSymbol}$1`);
-    };
-
     const parsedPayload = {
-      pattern: sanitizeStrayDollars(parsedData.pattern || "N/A", currencySymbol),
-      alert: sanitizeStrayDollars(parsedData.alert || "N/A", currencySymbol),
-      forecast: sanitizeStrayDollars(parsedData.forecast || "N/A", currencySymbol),
-      anomaly: sanitizeStrayDollars(parsedData.anomaly || "N/A", currencySymbol),
+      pattern: sanitizeCurrencySymbols(parsedData.pattern || "N/A", currencySymbol),
+      alert: sanitizeCurrencySymbols(parsedData.alert || "N/A", currencySymbol),
+      forecast: sanitizeCurrencySymbols(parsedData.forecast || "N/A", currencySymbol),
+      anomaly: sanitizeCurrencySymbols(parsedData.anomaly || "N/A", currencySymbol),
       modelUsed: result.model
     };
 
@@ -383,7 +392,8 @@ JSON Format:
       .from("ai_insights")
       .insert({
         user_id: userId,
-        insight_text: JSON.stringify(parsedPayload)
+        insight_text: JSON.stringify(parsedPayload),
+        currency: homeCurrency
       })
       .select()
       .single();
@@ -398,6 +408,7 @@ JSON Format:
         id: insertedInsight.id,
         user_id: insertedInsight.user_id,
         created_at: insertedInsight.created_at,
+        currency: insertedInsight.currency,
         ...parsedPayload
       }
     });

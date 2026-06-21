@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
+import { useTheme } from "../../context/ThemeContext";
 import {
   TrendingUp,
   AlertTriangle,
@@ -13,6 +14,14 @@ import {
   HelpCircle,
   Cpu,
 } from "lucide-react";
+
+// Reusable safety net to replace stray "$" followed by digits with the correct symbol
+function sanitizeCurrencySymbols(text, correctSymbol) {
+  if (!text) return "";
+  if (correctSymbol === "$") return text;
+  // Match stray "$" immediately followed by a digit (lookahead)
+  return text.replace(/\$(?=\d)/g, correctSymbol);
+}
 
 // Sub-component to render text with typing effect
 function TypewriterEffect({ text }) {
@@ -39,10 +48,25 @@ function TypewriterEffect({ text }) {
 
 export default function AISummary({ transactions = [] }) {
   const queryClient = useQueryClient();
+  const { homeCurrency } = useTheme();
   const [askQuery, setAskQuery] = useState("");
   const [chatResponse, setChatResponse] = useState(null);
   const [chatError, setChatError] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
+
+  const getCurrencySymbol = (currency) => {
+    const symbols = {
+      INR: "₹",
+      USD: "$",
+      EUR: "€",
+      GBP: "£",
+      AED: "د.إ",
+      JPY: "¥"
+    };
+    return symbols[currency] || currency;
+  };
+
+  const currencySymbol = getCurrencySymbol(homeCurrency);
 
   // Fetch Session User ID
   const [userId, setUserId] = useState(null);
@@ -59,7 +83,7 @@ export default function AISummary({ transactions = [] }) {
     error: reportError,
     refetch: refetchReport,
   } = useQuery({
-    queryKey: ["ai_insights_report", userId],
+    queryKey: ["ai_insights_report", userId, homeCurrency],
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -285,10 +309,10 @@ export default function AISummary({ transactions = [] }) {
               <p className={`mt-4 text-xs font-semibold leading-relaxed ${
                 report ? "text-foreground/90" : "text-muted-foreground/85 italic"
               }`}>
-                {report ? report.pattern : "Run analysis to view your spending patterns."}
+                {report ? sanitizeCurrencySymbols(report.pattern, currencySymbol) : "Run analysis to view your spending patterns."}
               </p>
             </div>
-
+ 
             {/* Card 2: Alert */}
             <div className={`rounded-2xl border p-5 flex flex-col justify-between transition-all hover:shadow-sm ${
               report 
@@ -310,10 +334,10 @@ export default function AISummary({ transactions = [] }) {
               <p className={`mt-4 text-xs font-semibold leading-relaxed ${
                 report ? "text-foreground/90" : "text-muted-foreground/85 italic"
               }`}>
-                {report ? report.alert : "Run analysis to check budget overruns."}
+                {report ? sanitizeCurrencySymbols(report.alert, currencySymbol) : "Run analysis to check budget overruns."}
               </p>
             </div>
-
+ 
             {/* Card 3: Forecast */}
             <div className={`rounded-2xl border p-5 flex flex-col justify-between transition-all hover:shadow-sm ${
               report 
@@ -335,10 +359,10 @@ export default function AISummary({ transactions = [] }) {
               <p className={`mt-4 text-xs font-semibold leading-relaxed ${
                 report ? "text-foreground/90" : "text-muted-foreground/85 italic"
               }`}>
-                {report ? report.forecast : "Run analysis to project savings trajectory."}
+                {report ? sanitizeCurrencySymbols(report.forecast, currencySymbol) : "Run analysis to project savings trajectory."}
               </p>
             </div>
-
+ 
             {/* Card 4: Anomaly */}
             <div className={`rounded-2xl border p-5 flex flex-col justify-between transition-all hover:shadow-sm ${
               report 
@@ -360,7 +384,7 @@ export default function AISummary({ transactions = [] }) {
               <p className={`mt-4 text-xs font-semibold leading-relaxed ${
                 report ? "text-foreground/90" : "text-muted-foreground/85 italic"
               }`}>
-                {report ? report.anomaly : "Run analysis to scan for unusual expenditures."}
+                {report ? sanitizeCurrencySymbols(report.anomaly, currencySymbol) : "Run analysis to scan for unusual expenditures."}
               </p>
             </div>
 
