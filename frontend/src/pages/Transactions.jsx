@@ -18,6 +18,7 @@ import {
   Upload,
   Sparkles,
   Loader2,
+  Check,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import CSVImportModal from "../components/transactions/CSVImportModal";
@@ -103,6 +104,7 @@ export default function Transactions() {
   const [quickAddText, setQuickAddText] = useState("");
   const [quickAdding, setQuickAdding] = useState(false);
   const [quickAddError, setQuickAddError] = useState("");
+  const [parsedTransactions, setParsedTransactions] = useState([]);
 
   // Live Exchange Rate Conversion helper states
   const [exchangeRateHelper, setExchangeRateHelper] = useState(null);
@@ -316,6 +318,42 @@ export default function Transactions() {
     }
   };
 
+  const updateParsedTransactionField = (index, field, value) => {
+    setParsedTransactions((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  const removeParsedTransaction = (index) => {
+    setParsedTransactions((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddAllParsed = async () => {
+    try {
+      for (const tx of parsedTransactions) {
+        await createMutation.mutateAsync({
+          amount: parseFloat(tx.amount),
+          type: tx.type,
+          category: tx.category,
+          date: tx.date,
+          description: tx.description || "Quick add transaction",
+          currency: tx.currency || homeCurrency,
+          is_recurring: false,
+          recurrence_frequency: null,
+          recurrence_end_date: null
+        });
+      }
+      setParsedTransactions([]);
+      setQuickAddText("");
+      alert("All transactions added successfully!");
+    } catch (error) {
+      console.error("Failed to add all parsed transactions:", error);
+      alert("Error adding some transactions. Please check input formats.");
+    }
+  };
+
   const handleQuickAddSubmit = async (e) => {
     e.preventDefault();
     if (!quickAddText.trim()) return;
@@ -335,24 +373,34 @@ export default function Transactions() {
 
       if (response.ok) {
         const data = await response.json();
-        // Prefill form
-        addForm.setValue("amount", data.amount ? data.amount.toString() : "");
-        addForm.setValue("type", data.type || "expense");
-        addForm.setValue("category", data.category || "other");
-        addForm.setValue("date", data.date || new Date().toISOString().split("T")[0]);
-        addForm.setValue("description", data.description || "");
-        addForm.setValue("currency", data.currency || "INR");
-        addForm.setValue("is_recurring", false);
         
-        setIsAddOpen(true);
-        setQuickAddText("");
+        if (data.transactions && data.transactions.length === 1) {
+          const tx = data.transactions[0];
+          // Prefill manual single addForm
+          addForm.setValue("amount", tx.amount ? tx.amount.toString() : "");
+          addForm.setValue("type", tx.type || "expense");
+          addForm.setValue("category", tx.category || "other");
+          addForm.setValue("date", tx.date || new Date().toISOString().split("T")[0]);
+          addForm.setValue("description", tx.description || "");
+          addForm.setValue("currency", tx.currency || "INR");
+          addForm.setValue("is_recurring", false);
+          
+          setIsAddOpen(true);
+          setQuickAddText("");
+        } else if (data.transactions && data.transactions.length > 1) {
+          setParsedTransactions(data.transactions);
+        } else {
+          setQuickAddError("No transactions extracted from the prompt.");
+        }
       } else {
         const err = await response.json().catch(() => ({}));
         setQuickAddError(err.error || "AI could not parse with high confidence. Please use manual form.");
+        setIsAddOpen(true); // reveal manual form below
       }
     } catch (err) {
       console.error("Quick add failed:", err);
       setQuickAddError("Failed to connect to NLP parsing service.");
+      setIsAddOpen(true); // reveal manual form below
     } finally {
       setQuickAdding(false);
     }
@@ -983,6 +1031,150 @@ export default function Transactions() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MULTI-TRANSACTION CONFIRMATION MODAL */}
+      {parsedTransactions.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-4xl max-h-[85vh] rounded-xl bg-card p-6 shadow-xl border border-border relative text-card-foreground flex flex-col animate-fade-in">
+            <button
+              onClick={() => setParsedTransactions([])}
+              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="mb-4">
+              <h3 className="text-lg font-bold text-foreground font-display flex items-center space-x-2">
+                <Sparkles className="h-5 w-5 text-primary animate-pulse" />
+                <span>Confirm Parsed Transactions</span>
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                We found {parsedTransactions.length} transactions. Please review, edit, or remove them before saving.
+              </p>
+            </div>
+
+            {/* Scrollable list of cards */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1 mb-6">
+              {parsedTransactions.map((tx, idx) => (
+                <div key={idx} className="rounded-xl border border-border bg-secondary/20 p-4 shadow-sm relative space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => removeParsedTransaction(idx)}
+                    className="absolute right-3 top-3 text-xs font-bold text-destructive hover:opacity-80 flex items-center space-x-1"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    <span>Remove</span>
+                  </button>
+
+                  <div className="text-xs font-bold text-primary uppercase tracking-wider">
+                    Transaction #{idx + 1}
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-6">
+                    {/* Description */}
+                    <div className="md:col-span-2 space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Description</label>
+                      <input
+                        type="text"
+                        value={tx.description || ""}
+                        onChange={(e) => updateParsedTransactionField(idx, "description", e.target.value)}
+                        className="block w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 font-body"
+                      />
+                    </div>
+
+                    {/* Amount */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Amount</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={tx.amount || ""}
+                        onChange={(e) => updateParsedTransactionField(idx, "amount", e.target.value)}
+                        className="block w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 font-body"
+                      />
+                    </div>
+
+                    {/* Currency */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Currency</label>
+                      <select
+                        value={tx.currency || "INR"}
+                        onChange={(e) => updateParsedTransactionField(idx, "currency", e.target.value)}
+                        className="block w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 font-body capitalize"
+                      >
+                        {CURRENCIES.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Type */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Type</label>
+                      <select
+                        value={tx.type || "expense"}
+                        onChange={(e) => updateParsedTransactionField(idx, "type", e.target.value)}
+                        className="block w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 font-body capitalize"
+                      >
+                        <option value="expense">Expense</option>
+                        <option value="income">Income</option>
+                      </select>
+                    </div>
+
+                    {/* Category */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-muted-foreground">Category</label>
+                      <select
+                        value={tx.category || "other"}
+                        onChange={(e) => updateParsedTransactionField(idx, "category", e.target.value)}
+                        className="block w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 font-body capitalize"
+                      >
+                        {CATEGORIES.map((cat) => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Date */}
+                  <div className="w-full sm:w-1/3 md:w-1/4 space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-muted-foreground">Date</label>
+                    <input
+                      type="date"
+                      value={tx.date || ""}
+                      onChange={(e) => updateParsedTransactionField(idx, "date", e.target.value)}
+                      className="block w-full rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 font-body"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end space-x-3 pt-4 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setParsedTransactions([])}
+                className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-secondary/20 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAddAllParsed}
+                disabled={parsedTransactions.length === 0 || createMutation.isPending}
+                className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-xs font-bold hover:opacity-90 disabled:opacity-50 transition-colors flex items-center space-x-1.5"
+              >
+                {createMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Check className="h-3.5 w-3.5" />
+                )}
+                <span>Add All ({parsedTransactions.length}) Transactions</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

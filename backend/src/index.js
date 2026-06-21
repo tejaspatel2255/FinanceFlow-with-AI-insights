@@ -84,7 +84,7 @@ async function getUserHomeCurrencySymbol(userId) {
 }
 
 // Zod Schema for NLQ Quick Add
-const QuickAddSchema = z.object({
+const QuickAddSingleSchema = z.object({
   amount: z.number().positive(),
   type: z.enum(["income", "expense"]),
   category: z.enum([
@@ -102,6 +102,8 @@ const QuickAddSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // YYYY-MM-DD format
   description: z.string().max(255).default("Quick add transaction")
 });
+
+const QuickAddSchema = z.array(QuickAddSingleSchema);
 
 // Reusable notifications checker functions
 async function checkAndTriggerTransactionNotifications(tx) {
@@ -863,6 +865,8 @@ app.post("/api/transactions/quick-add", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Text prompt is required" });
     }
 
+    const userId = req.user.id;
+    const homeCurrency = await getUserHomeCurrency(userId);
     const todayStr = new Date().toISOString().split("T")[0];
 
     const prompt = `
@@ -871,6 +875,7 @@ Extract transaction details from this unstructured text:
 "${text}"
 
 Reference date (Today): ${todayStr}
+User's Home Currency Code: ${homeCurrency}
 
 Select exactly one category from this fixed list:
 - housing
@@ -887,46 +892,106 @@ Select exactly one category from this fixed list:
 Resolve relative dates (e.g. "yesterday", "today", "last Monday", "2 days ago") into actual "YYYY-MM-DD" format using the reference date. If no date is mentioned, default to today's date "${todayStr}".
 Infer the type: "income" or "expense" (e.g. "spent", "paid", "bought" implies expense; "got", "received", "earned", "salary" implies income).
 
-Your response must be a single raw JSON object with no markdown block formatting, no preamble, and no extra text.
-JSON structure:
-{
-  "amount": number (positive float),
-  "type": "income" or "expense",
-  "category": "one_of_the_categories_above",
-  "date": "YYYY-MM-DD",
-  "description": "short descriptive name"
-}
+IMPORTANT INSTRUCTIONS:
+1. Always return a JSON ARRAY containing one or more transaction objects, even if the input describes only a single transaction.
+2. If the input describes multiple distinct transactions, return an array of transaction objects.
+3. Return ONLY a valid raw JSON array with no markdown code blocks (do not wrap in \`\`\`json), no preamble, and no explanation text.
+
+EXAMPLES:
+---
+Input: "spent 200 on lunch yesterday"
+Output:
+[
+  {
+    "amount": 200,
+    "type": "expense",
+    "category": "entertainment",
+    "date": "YYYY-MM-DD", // Resolved yesterday's date
+    "description": "Lunch"
+  }
+]
+
+Input: "spent 500 on icecream and earned 1000 by making a project"
+Output:
+[
+  {
+    "amount": 500,
+    "type": "expense",
+    "category": "entertainment",
+    "date": "${todayStr}",
+    "description": "Icecream"
+  },
+  {
+    "amount": 1000,
+    "type": "income",
+    "category": "freelance",
+    "date": "${todayStr}",
+    "description": "Project"
+  }
+]
+---
 `;
 
     const result = await callOpenRouterWithFallback([
-      { role: "system", content: "You are a financial information extraction agent. You only output raw JSON objects." },
+      { role: "system", content: "You are a financial information extraction agent. You only output raw JSON arrays of objects." },
       { role: "user", content: prompt }
     ]);
 
     let rawText = result.text.trim();
-    if (rawText.startsWith("```")) {
-      rawText = rawText.replace(/^```(json)?/, "").replace(/```$/, "").trim();
+    console.log("[Quick Add] Raw AI response text:", rawText);
+
+    let parsedData;
+    try {
+      let cleanText = rawText;
+      if (cleanText.startsWith("```")) {
+        cleanText = cleanText.replace(/^```(json)?/, "").replace(/```$/, "").trim();
+      } else {
+        // Fallback: extract JSON array or object using regex
+        const arrayMatch = cleanText.match(/\[[\s\S]*\]/);
+        const objectMatch = cleanText.match(/\{[\s\S]*\}/);
+        if (arrayMatch) {
+          cleanText = arrayMatch[0];
+        } else if (objectMatch) {
+          cleanText = objectMatch[0];
+        }
+      }
+      parsedData = JSON.parse(cleanText);
+    } catch (parseError) {
+      console.error("[Quick Add] AI response wasn't valid JSON. Error:", parseError.message);
+      return res.status(422).json({
+        error: "AI response was not valid JSON. Please try again or enter manually.",
+        details: parseError.message
+      });
     }
 
-    const parsedData = JSON.parse(rawText);
+    let rawArray = [];
+    if (Array.isArray(parsedData)) {
+      rawArray = parsedData;
+    } else if (parsedData && Array.isArray(parsedData.transactions)) {
+      rawArray = parsedData.transactions;
+    } else if (parsedData && typeof parsedData === "object") {
+      rawArray = [parsedData];
+    }
 
-    const validated = QuickAddSchema.safeParse({
-      ...parsedData,
-      amount: parsedData.amount ? parseFloat(parsedData.amount) : undefined
-    });
+    const processedArray = rawArray.map(item => ({
+      ...item,
+      amount: item.amount ? parseFloat(item.amount) : undefined
+    }));
+
+    const validated = QuickAddSchema.safeParse(processedArray);
 
     if (!validated.success) {
-      console.warn("Zod validation failed for quick-add extraction:", validated.error);
+      console.error("[Quick Add] Zod validation failed for quick-add extraction:", JSON.stringify(validated.error.errors, null, 2));
       return res.status(422).json({ 
-        error: "Could not reliably extract transaction data. Please enter it manually.", 
+        error: "AI response was JSON but missing or having invalid required fields.", 
         details: validated.error.errors 
       });
     }
 
-    res.json(validated.data);
+    res.json({ transactions: validated.data });
   } catch (error) {
     console.error("Quick Add Extraction Error:", error);
-    res.status(500).json({ error: "Failed to parse natural language transaction" });
+    res.status(500).json({ error: error.message || "All OpenRouter models in the fallback chain failed." });
   }
 });
 
