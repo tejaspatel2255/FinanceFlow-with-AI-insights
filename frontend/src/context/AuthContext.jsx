@@ -44,6 +44,7 @@ export function AuthProvider({ children }) {
         data: {
           name: name,
         },
+        emailRedirectTo: `${window.location.origin}/login`,
       },
     });
     if (error) throw error;
