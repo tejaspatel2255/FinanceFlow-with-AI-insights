@@ -2,11 +2,8 @@ require("dotenv").config();
 
 // Robust fallback chain with corrected spelling, active free models, and auto-router
 const FALLBACK_MODELS = [
-  "google/gemini-2.0-flash-001",
-  "google/gemini-flash-1.5",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen-2.5-72b-instruct:free",
-  "openrouter/free"
+  "openrouter/free",
+  "meta-llama/llama-3.3-70b-instruct:free"
 ];
 
 /**
