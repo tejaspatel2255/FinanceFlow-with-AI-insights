@@ -495,6 +495,21 @@ app.post("/api/goals", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Goal name and target amount are required" });
     }
 
+    if (deadline) {
+      const parts = deadline.split("-");
+      if (parts.length === 3) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        const selectedDate = new Date(year, month, day);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (selectedDate < today) {
+          return res.status(400).json({ error: "Deadline must be today or a future date" });
+        }
+      }
+    }
+
     const { data: goal, error } = await supabaseAdmin
       .from("goals")
       .insert({
@@ -527,6 +542,21 @@ app.put("/api/goals/:id", requireAuth, async (req, res) => {
       .eq("id", id)
       .eq("user_id", userId)
       .single();
+
+    if (deadline !== undefined && deadline !== null) {
+      const parts = deadline.split("-");
+      if (parts.length === 3) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        const selectedDate = new Date(year, month, day);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (selectedDate < today) {
+          return res.status(400).json({ error: "Deadline must be today or a future date" });
+        }
+      }
+    }
 
     const updatePayload = {};
     if (name !== undefined) updatePayload.name = name;

@@ -15,7 +15,25 @@ const goalSchema = z.object({
     .refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
       message: "Target amount must be a positive number",
     }),
-  deadline: z.string().min(1, "Deadline date is required"),
+  deadline: z
+    .string()
+    .min(1, "Deadline date is required")
+    .refine(
+      (val) => {
+        const parts = val.split("-");
+        if (parts.length !== 3) return false;
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        const selectedDate = new Date(year, month, day);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return selectedDate >= today;
+      },
+      {
+        message: "Deadline must be today or a future date",
+      }
+    ),
 });
 
 export default function Goals() {
@@ -31,6 +49,14 @@ export default function Goals() {
       JPY: "¥"
     };
     return symbols[currency] || "₹";
+  };
+
+  const getTodayString = () => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
   };
 
   const currencySymbol = getCurrencySymbol(homeCurrency);
@@ -165,6 +191,7 @@ export default function Goals() {
               <label className="block text-xs font-bold uppercase text-muted-foreground font-display">Deadline</label>
               <input
                 type="date"
+                min={getTodayString()}
                 {...register("deadline")}
                 className={`mt-1.5 block w-full rounded-lg border bg-background text-foreground px-3 py-2 text-sm focus:outline-none focus:ring-2 font-body ${
                   errors.deadline
