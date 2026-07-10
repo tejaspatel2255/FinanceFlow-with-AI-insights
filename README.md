@@ -84,7 +84,7 @@ FinanceFlow/
 │   ├── tailwind.config.js          # Tailwind styling tokens
 │   └── vite.config.js              # Vite bundler options
 └── supabase/
-    └── schema.sql                  # PostgreSQL Tables, Indexes, RLS Policies & User Settings
+    └── schema.sql                  # PostgreSQL Tables, Indexes, RLS Policies, Settings & Notifications
 ```
 
 ---
@@ -100,7 +100,7 @@ FinanceFlow/
 ### Step 1: Clone the Repo & Setup the Database
 1.  Log in to your **Supabase Dashboard** and create a new project.
 2.  Open the **SQL Editor** in your Supabase project.
-3.  Copy and paste the contents of `supabase/schema.sql` into the SQL Editor and click **Run**. This creates the `transactions`, `budgets`, `goals`, `ai_insights`, and `user_settings` tables, sets up performance indexes, and enables RLS security.
+3.  Copy and paste the contents of `supabase/schema.sql` into the SQL Editor and click **Run**. This creates the `transactions`, `budgets`, `goals`, `ai_insights`, `user_settings`, and `notifications` tables, sets up performance indexes, and enables RLS security.
 
 ### Step 2: Configure Backend Environment Variables
 Navigate to the `backend/` folder and create a `.env` file:
